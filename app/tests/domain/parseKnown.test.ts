@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   KnownFormatError,
   parseKnownLemmas,
-} from '../../src/domain/bundle/parseKnown'
+} from '../../src/domain/seed/parseKnown'
 
 describe('parseKnownLemmas', () => {
   it('reads the flat array seed_known.py writes', () => {

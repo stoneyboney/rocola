@@ -17,7 +17,7 @@ import {
   UnrecognisedFileError,
   type ImportTargets,
 } from '../src/app/importFile'
-import { KnownFormatError } from '../src/domain/bundle/parseKnown'
+import { KnownFormatError } from '../src/domain/seed/parseKnown'
 import { FakeKnownLemmaRepository } from './fakes'
 
 function targets(): ImportTargets & { known: FakeKnownLemmaRepository } {

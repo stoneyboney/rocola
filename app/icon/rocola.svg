@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Source of the home-screen icon. A jukebox seen from the front: the
+       arched cabinet, and a record centred in it. Two flat colours, no
+       gradients, because it is read at 60 px on a home screen — and violet
+       rather than Molcajete's terracotta, because the two apps sit next to
+       each other on the same home screen and the tile is what tells them
+       apart. Rasterised by icon/build-icons.sh; the PNGs in public/icons are
+       committed so a clone needs no image tooling. -->
+  <rect width="512" height="512" fill="#6b4e8f"/>
+  <path d="M102,430 L102,215 A154,133 0 0 1 410,215 L410,430 Z" fill="#f7f4fa"/>
+  <circle cx="256" cy="256" r="90" fill="#6b4e8f"/>
+  <circle cx="256" cy="256" r="18" fill="#f7f4fa"/>
+</svg>

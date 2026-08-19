@@ -19,7 +19,7 @@ render() { # svg, size, destination name
   echo "  $out/$3  ${2}x${2}"
 }
 
-render molcajete.svg 512 icon-512.png
-render molcajete.svg 192 icon-192.png
-render molcajete.svg 180 apple-touch-icon-180.png
-render molcajete-maskable.svg 512 icon-512-maskable.png
+render rocola.svg 512 icon-512.png
+render rocola.svg 192 icon-192.png
+render rocola.svg 180 apple-touch-icon-180.png
+render rocola-maskable.svg 512 icon-512-maskable.png

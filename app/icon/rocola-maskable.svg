@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Maskable variant: same mark, scaled into the 80% safe circle so Android
+       and any future launcher can crop it to whatever shape it likes without
+       clipping the cabinet's shoulders. -->
+  <rect width="512" height="512" fill="#6b4e8f"/>
+  <g transform="translate(256 256) scale(0.7) translate(-256 -256)">
+    <path d="M102,430 L102,215 A154,133 0 0 1 410,215 L410,430 Z" fill="#f7f4fa"/>
+    <circle cx="256" cy="256" r="90" fill="#6b4e8f"/>
+    <circle cx="256" cy="256" r="18" fill="#f7f4fa"/>
+  </g>
+</svg>

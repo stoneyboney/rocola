@@ -5,7 +5,7 @@
  */
 
 import { UnrecognisedFileError, type ImportOutcome } from '../app/importFile'
-import { KnownFormatError } from '../domain/bundle/parseKnown'
+import { KnownFormatError } from '../domain/seed/parseKnown'
 import { COVERAGE_WARNING_THRESHOLD } from '../domain/coverage'
 
 const numbers = new Intl.NumberFormat('de-DE')

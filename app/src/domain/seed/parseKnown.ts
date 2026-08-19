@@ -1,11 +1,11 @@
 /**
- * The other file the import button accepts: SPEC §8's `known.json`.
+ * The file the import button accepts: `known.json`.
  *
  * A flat array of lemma strings, which is the shape `seed_known.py` writes and
  * the shape `molcajete-prep`'s `cli_seed.py` already reads. Three consumers
  * agreeing on "an array of strings" is the reason it is not something richer.
  *
- * Validated for the same reason a bundle is: the file arrives by AirDrop from
+ * Validated carefully, because the file arrives by AirDrop from
  * whatever version of the pipeline that desktop happens to be running, and a
  * half-valid seed is worse than none — a lemma wrongly marked known is never
  * taught *and* counts as covered, so the app would quietly skip words the

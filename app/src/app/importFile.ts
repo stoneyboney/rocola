@@ -13,7 +13,7 @@
  * screen, or anything about how a file gets onto the device.
  */
 
-import { parseKnownLemmas } from '../domain/bundle/parseKnown'
+import { parseKnownLemmas } from '../domain/seed/parseKnown'
 import type { KnownLemmaRepository } from '../domain/ports/KnownLemmaRepository'
 
 export type ImportOutcome = {
