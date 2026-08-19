@@ -12,6 +12,11 @@
 # the repository. The rule exists before the directory does, deliberately.
 lyrics/
 
+# Probe and pipeline reports. They enumerate the user's listening history,
+# which is personal even though it is not lyric text. The aggregate findings
+# get written up in docs/ by hand; the raw per-track tables stay here.
+reports/
+
 # Anki exports and the known-lemma seed built from them. Personal vocabulary,
 # and regenerable from the deck at any time.
 *.anki.txt

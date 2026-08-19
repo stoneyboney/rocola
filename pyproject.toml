@@ -4,11 +4,15 @@ version = "0.1.0"
 description = "Rocola's song half: scrobbles in, a glossed teach set out."
 readme = "README.md"
 
-# spaCy 3.8 ships no cp314 wheels, so 3.14 would compile spacy/thinc/blis from
-# source. Pin below it. Repeated from molcajete-prep rather than inherited,
-# because a `requires-python` that disagreed with its dependency's would only
-# surface as a resolution failure.
-requires-python = ">=3.11,<3.14"
+# Upper bound: spaCy 3.8 ships no cp314 wheels, so 3.14 would compile
+# spacy/thinc/blis from source. Repeated from molcajete-prep rather than
+# inherited, because a `requires-python` that disagreed with its dependency's
+# would only surface as a resolution failure.
+#
+# Lower bound: 3.12, where molcajete-prep says 3.11. lingua-language-detector
+# 2.2 requires >=3.12, and a narrower floor than a dependency's is fine — the
+# reverse is what breaks. Nothing here needs 3.11.
+requires-python = ">=3.12,<3.14"
 
 dependencies = [
     # The language half, shared with Molcajete: lemmatisation, the lexicon,
@@ -21,6 +25,20 @@ dependencies = [
     # molcajete-prep would look on PyPI and fail. Molcajete learned this the
     # expensive way; see docs/molcajete-CLAUDE.md.
     "es-core-news-sm",
+    # SPEC §7.3's language filter, restricted at construction to the seven
+    # languages worth discriminating between. Preferred over fasttext because
+    # it is better on short text, and a song is short text.
+    #
+    # It is a ~170 MB wheel: the models for every language it knows ship in the
+    # package whether or not you build a detector that uses them. Desktop-only,
+    # never near the app bundle. SPEC §7.3 names fasttext as the alternative if
+    # that ever stops being an acceptable trade.
+    "lingua-language-detector>=2.2",
+    # Declared rather than inherited. It arrives transitively through anthropic
+    # today, which means the day anthropic drops it or moves to something else,
+    # every HTTP client in this package breaks for a reason with no visible
+    # connection to the change.
+    "httpx>=0.28",
 ]
 
 [dependency-groups]

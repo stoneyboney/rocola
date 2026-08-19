@@ -22,7 +22,20 @@ Rocola is a **reading** app. The following are out of scope and must not be adde
 - Whisper, forced alignment, speech processing
 - Cloze, dictation, or listening exercises
 
-`syncedLyrics` **must be discarded** when LRCLIB returns it. Do not store it "in case we need it later."
+**Discard every timed or serialised lyric field, whatever it is called.** Keep
+`plainLyrics` and nothing else. Do not store the others "in case we need it
+later."
+
+This is written as a rule about *kinds* of field rather than a list of names,
+because the list was already wrong once. SPEC §7.2 names `plainLyrics` and
+`syncedLyrics`; LRCLIB also returns **`lyricsfile`**, a YAML document holding
+the timed lines *and* a second full copy of the plain text — 2,821 characters
+against `plainLyrics`' 677 on the track it was measured on. A client written to
+"discard `syncedLyrics`" would have kept both the timestamps and the text.
+
+So the client **allowlists** the fields it keeps rather than denylisting the
+ones it drops, and does it on the raw JSON before a response object exists. A
+fourth lyric-bearing field added by LRCLIB next year is then already handled.
 
 The only permitted streaming touchpoint is an outbound deep link built from a stored track ID. No SDK, no embed, no OAuth for playback.
 
