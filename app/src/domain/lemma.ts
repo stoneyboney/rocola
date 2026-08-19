@@ -11,7 +11,7 @@
  *
  * Bare lemma, not lemma + part of speech, for three reasons:
  *
- * 1. `pipeline/molcajete_prep/classify.py` already tests `entry.lemma in
+ * 1. `molcajete-prep`'s `classify.py` already tests `entry.lemma in
  *    known_lemmas`. The two implementations of §5 have to agree, and that one
  *    was written first.
  * 2. SPEC §8's `known.json` — the Phase 5 Anki seed — is a flat array of lemma

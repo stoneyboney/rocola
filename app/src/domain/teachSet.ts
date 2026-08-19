@@ -1,7 +1,7 @@
 /**
  * The SPEC §5 vocabulary selection rules, on device.
  *
- * This is the TypeScript twin of `pipeline/molcajete_prep/classify.py`, and the
+ * This is the TypeScript twin of `molcajete-prep`'s `classify.py`, and the
  * third implementation will be Swift. Read that module's docstring alongside
  * this one — where the two deliberately differ it is written down below, and
  * where they agree they must keep agreeing.
