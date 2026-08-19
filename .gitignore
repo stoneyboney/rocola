@@ -12,6 +12,10 @@
 # the repository. The rule exists before the directory does, deliberately.
 lyrics/
 
+# Built per-track JSON. Carries the lyric text, so the same rule applies —
+# a working file on the owner's own machine, never a committed one.
+tracks/
+
 # Probe and pipeline reports. They enumerate the user's listening history,
 # which is personal even though it is not lyric text. The aggregate findings
 # get written up in docs/ by hand; the raw per-track tables stay here.

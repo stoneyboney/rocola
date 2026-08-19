@@ -38,6 +38,7 @@ regional word is taught only if it is frequent enough on its own merits.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 from molcajete_prep.classify import (
     ClassificationOptions,
@@ -94,30 +95,61 @@ def _word_tokens(paragraphs: list[list[Token]]) -> int:
     return sum(1 for tokens in paragraphs for token in tokens if token.is_word)
 
 
-def build_teach_set(
-    document: LyricDocument,
-    nlp,
-    *,
-    known_lemmas: frozenset[str] = frozenset(),
-    options: ClassificationOptions | None = None,
-) -> TrackTeachSet:
-    """SPEC §7.4. One song in, one teach set out.
+@dataclass(frozen=True)
+class SongLexicon:
+    """The lexicon and the tokens it came from, before classification.
 
-    `known_lemmas` holds lemma *strings*, matching the flat array `seed_known.py`
-    writes — the same contract Molcajete's classifier uses.
+    Exists because the glossing pass has to run *between* building this and
+    classifying it: `mexicanism && bookCount >= 2` is a teach rule, so the flag
+    must exist before the rules are applied. Molcajete's builder orders it the
+    same way and for the same reason.
     """
-    options = options or ClassificationOptions()
 
-    unique_texts = [line.text for line in document.unique_lines]
-    unique_tokens = tokenize_paragraphs(nlp, unique_texts)
+    lexicon: Lexicon
+    #: One song as one "chapter", whose paragraphs are the unique lines. The
+    #: shape `gloss_lexicon` and `example_sentence` both expect.
+    song: list[list[Token]]
+    unique_word_tokens: int
+    total_word_tokens: int
+
+
+def prepare(document: LyricDocument, nlp) -> SongLexicon:
+    """Tokenise the unique lines and build the lexicon. SPEC §7.4 steps 1-3."""
+    unique_tokens = tokenize_paragraphs(
+        nlp, [line.text for line in document.unique_lines]
+    )
+    all_tokens = tokenize_paragraphs(nlp, [line.text for line in document.lines])
 
     # One song as one "chapter". The unique lines are its paragraphs — this is
     # the substitution the module docstring is about.
     song = [unique_tokens]
-    lexicon = build_lexicon(song)
+    return SongLexicon(
+        lexicon=build_lexicon(song),
+        song=song,
+        unique_word_tokens=_word_tokens(unique_tokens),
+        total_word_tokens=_word_tokens(all_tokens),
+    )
+
+
+def classify_song(
+    prepared: SongLexicon,
+    *,
+    known_lemmas: frozenset[str] = frozenset(),
+    mexicanism: Mapping[LemmaKey, bool] | None = None,
+    options: ClassificationOptions | None = None,
+) -> TrackTeachSet:
+    """SPEC §7.4 step 4, over an already-built lexicon.
+
+    `mexicanism` comes from the glossing pass. Omitting it leaves every entry
+    false, which is the state a Molcajete `--no-gloss` build is in and the
+    state this repo is in until §7.5 lands.
+    """
+    options = options or ClassificationOptions()
+    lexicon = prepared.lexicon
+    song = prepared.song
 
     results = classify_all(
-        lexicon.entries_for_classification(), known_lemmas, options
+        lexicon.entries_for_classification(mexicanism), known_lemmas, options
     )
 
     def record_of(key: LemmaKey) -> LexiconRecord:
@@ -147,20 +179,42 @@ def build_teach_set(
         sorted(key for key, result in results.items() if not result.is_teach)
     )
 
-    all_tokens = tokenize_paragraphs(nlp, [line.text for line in document.lines])
-
     return TrackTeachSet(
         teach=teach,
         gloss_only=gloss_only,
         lexicon=lexicon,
-        unique_word_tokens=_word_tokens(unique_tokens),
-        total_word_tokens=_word_tokens(all_tokens),
+        unique_word_tokens=prepared.unique_word_tokens,
+        total_word_tokens=prepared.total_word_tokens,
+    )
+
+
+def build_teach_set(
+    document: LyricDocument,
+    nlp,
+    *,
+    known_lemmas: frozenset[str] = frozenset(),
+    mexicanism: Mapping[LemmaKey, bool] | None = None,
+    options: ClassificationOptions | None = None,
+) -> TrackTeachSet:
+    """SPEC §7.4, in one call. One song in, one teach set out.
+
+    The convenience path, for callers with no glossing pass to interleave.
+    A build that glosses uses `prepare` and `classify_song` around it.
+    """
+    return classify_song(
+        prepare(document, nlp),
+        known_lemmas=known_lemmas,
+        mexicanism=mexicanism,
+        options=options,
     )
 
 
 __all__ = [
+    "SongLexicon",
     "TeachCard",
     "TrackTeachSet",
     "build_teach_set",
+    "classify_song",
     "exceeds_cap",
+    "prepare",
 ]
