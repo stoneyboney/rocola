@@ -1,7 +1,7 @@
 import type { SessionRepository } from '../domain/ports/SessionRepository'
 import type { SessionEffect, TeachingSession } from '../domain/session/session'
 import type { BookId } from '../domain/types'
-import { db, type MolcajeteDatabase } from './db'
+import { db, type RocolaDatabase } from './db'
 
 /**
  * The session store, and the one transaction that makes an interrupted session
@@ -13,7 +13,7 @@ import { db, type MolcajeteDatabase } from './db'
  * not know it — and re-grading on resume gives FSRS two reviews for one answer.
  */
 export class DexieSessionRepository implements SessionRepository {
-  constructor(private readonly database: MolcajeteDatabase = db) {}
+  constructor(private readonly database: RocolaDatabase = db) {}
 
   async load(
     bookId: BookId,

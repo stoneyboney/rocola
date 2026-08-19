@@ -1,7 +1,7 @@
 import type { LemmaId } from '../domain/lemma'
 import type { CardRepository } from '../domain/ports/CardRepository'
 import type { SrsCard } from '../domain/srs/scheduler'
-import { db, type MolcajeteDatabase } from './db'
+import { db, type RocolaDatabase } from './db'
 
 /**
  * FSRS cards in IndexedDB, keyed by lemma and by nothing else.
@@ -11,7 +11,7 @@ import { db, type MolcajeteDatabase } from './db'
  * `Date`s, so nothing has to be revived on the way out.
  */
 export class DexieCardRepository implements CardRepository {
-  constructor(private readonly database: MolcajeteDatabase = db) {}
+  constructor(private readonly database: RocolaDatabase = db) {}
 
   async get(lemmaId: LemmaId): Promise<SrsCard | undefined> {
     return (await this.database.cards.get(lemmaId))?.card

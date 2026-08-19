@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseBundle } from '../../src/domain/bundle/parseBundle'
-import { countChapterVocabulary } from '../../src/domain/coverage'
+import { countVocabulary } from '../../src/domain/coverage'
 import { lemmaId } from '../../src/domain/lemma'
 import {
   CLOSED_CLASS_POS,
@@ -11,7 +10,7 @@ import {
   type TeachSetOptions,
 } from '../../src/domain/teachSet'
 import type { LemmaKey, LexiconEntry } from '../../src/domain/types'
-import { readFixture } from '../fixture'
+import { LEXICON, lexiconMap, paragraphs } from '../fixture'
 
 function entry(over: Partial<LexiconEntry> = {}): LexiconEntry {
   return {
@@ -192,57 +191,66 @@ describe('cards are global, not per book', () => {
   })
 })
 
-describe('against the real fixture', () => {
-  const bundle = parseBundle(readFixture())
-  const lexicon = new Map(Object.entries(bundle.lexicon))
+describe('against the synthetic fixture', () => {
+  const lexicon = lexiconMap()
 
-  function recompute(chapterIndex: number, known: string[] = []) {
-    const chapter = bundle.chapters[chapterIndex]!
-    const vocabulary = countChapterVocabulary(chapter)
+  function recompute(known: string[] = []) {
+    const vocabulary = countVocabulary(paragraphs())
     return selectTeachSet(vocabulary.counts, lexicon, new Set(known), options())
   }
 
-  it('recomputes a different set than the bundle baked in', () => {
-    // The point of recomputing at all. The pipeline's teachSet was computed
-    // against a stale known-set and against `firstChapter`; ours is computed
-    // here and now. They are not supposed to match, and nothing in the app
-    // reads `Chapter.teachSet`.
-    const { teach } = recompute(0)
-    expect(bundle.chapters[0]!.teachSet).toHaveLength(25)
-    expect(teach).toHaveLength(18)
+  it('teaches the open-class words and nothing else', () => {
+    const { teach } = recompute()
+    const lemmas = teach.map((key) => lexicon.get(key)!.lemma).sort()
+
+    expect(lemmas).toEqual([
+      'caballo',
+      'camino',
+      'cantar',
+      'cerro',
+      'luna',
+      'sierra',
+      'sombra',
+      'viejo',
+    ])
   })
 
-  it('fills chapter 1 to exactly the session cap', () => {
-    const { teach } = recompute(0)
-    expect(teach.length).toBe(18)
+  it('teaches no closed-class word, however common it is', () => {
+    // el, de and y sit at zipf 6.7–6.9 in the fixture, clearing every
+    // frequency threshold there is. The part-of-speech rule is the only thing
+    // keeping them out, which is exactly why it is pinned here.
+    const { teach } = recompute()
     const lemmas = teach.map((key) => lexicon.get(key)!.lemma)
-    expect(lemmas).toContain('jacal') // the fixture's one mexicanism
+
     expect(lemmas).not.toContain('el')
-  })
+    expect(lemmas).not.toContain('de')
+    expect(lemmas).not.toContain('y')
 
-  it('drops a chapter’s cards once its shared words have been learned', () => {
-    // Chapter 2 reuses sierra, caballo, jacal and fusil from chapter 1.
-    const before = recompute(1).teach.length
-    const learned = toLemmaIds(recompute(0).teach, lexicon)
-    const after = recompute(1, learned).teach.length
-
-    expect(before).toBe(22)
-    expect(after).toBeLessThan(before)
-  })
-
-  it('teaches no proper noun and no closed-class word anywhere in the book', () => {
-    for (const index of [0, 1, 2]) {
-      for (const key of recompute(index).teach) {
-        const { pos } = lexicon.get(key)!
-        expect(pos).not.toBe('PROPN')
-        expect(CLOSED_CLASS_POS.has(pos)).toBe(false)
-      }
+    for (const key of teach) {
+      expect(CLOSED_CLASS_POS.has(lexicon.get(key)!.pos)).toBe(false)
     }
   })
 
+  it('teaches no proper noun, because a name has no lexicon key at all', () => {
+    const vocabulary = countVocabulary(paragraphs())
+    expect(vocabulary.propnTokens).toBe(1)
+    for (const key of recompute().teach) {
+      expect(lexicon.get(key)!.pos).not.toBe('PROPN')
+    }
+  })
+
+  it('shrinks as words become known', () => {
+    const before = recompute().teach.length
+    const learned = toLemmaIds(recompute().teach.slice(0, 3), lexicon)
+    const after = recompute(learned).teach.length
+
+    expect(before).toBe(8)
+    expect(after).toBe(5)
+  })
+
   it('leaves nothing to teach once every lemma is known', () => {
-    const everything = Object.values(bundle.lexicon).map(lemmaId)
-    const { teach, glossOnly } = recompute(0, everything)
+    const everything = Object.values(LEXICON).map(lemmaId)
+    const { teach, glossOnly } = recompute(everything)
     expect(teach).toEqual([])
     expect(glossOnly).toEqual([])
   })

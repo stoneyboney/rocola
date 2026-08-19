@@ -1,10 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
-import { DexieBookRepository } from '../infra/DexieBookRepository'
 import { DexieCardRepository } from '../infra/DexieCardRepository'
 import { DexieKnownLemmaRepository } from '../infra/DexieKnownLemmaRepository'
-import { DexieReadingPositionRepository } from '../infra/DexieReadingPositionRepository'
 import { DexieSessionRepository } from '../infra/DexieSessionRepository'
 import { App } from './App'
 import { RepositoryProvider } from './repositories'
@@ -21,8 +19,6 @@ if (!root) throw new Error('#root missing from index.html')
 // The one place that knows Dexie is the implementation. Everything above this
 // line sees only the ports (CLAUDE.md rule 4).
 const repositories = {
-  books: new DexieBookRepository(),
-  positions: new DexieReadingPositionRepository(),
   cards: new DexieCardRepository(),
   known: new DexieKnownLemmaRepository(),
   sessions: new DexieSessionRepository(),

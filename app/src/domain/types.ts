@@ -1,27 +1,32 @@
 /**
- * The bundle format, as the reader decodes it.
+ * The token model, as everything above it sees it.
  *
- * This is the TypeScript half of the contract written down in
- * `pipeline/molcajete_prep/schema.py`. The two files are maintained as if by
- * different people, because eventually one of them will be Swift. When the
- * pipeline's schema module changes, this one changes with it and
- * `SUPPORTED_SCHEMA_VERSION` moves.
+ * This was the `.molcajete.json` bundle contract; the bundle, the book and the
+ * chapter are gone with the EPUB pipeline (SPEC §3). What is left is the part
+ * that was never book-shaped: a run of tokens, a lexicon keyed by lemma, and
+ * the rule for which tokens the reader lets you tap.
  *
- * Two clarifications carried over from that module, both of which contradict a
- * casual reading of SPEC §4:
+ * Two clarifications carried over from the pipeline, both of which contradict a
+ * casual reading of the schema:
  *
- * 1. `t` is a **string** lexicon key (`"m0118"`), not a number. The §4 example
- *    shows integers while its own lexicon is keyed by strings; the strings win.
+ * 1. `t` is a **string** lexicon key (`"m0118"`), not a number.
  * 2. **Not every token carries every field.** Whitespace has only `s` and `ws`.
  *    Punctuation and numerals have `s` and `p`. A proper noun has `s`, `l` and
- *    `p` but no `t`, because SPEC §5 gives it no lexicon entry — which is also
- *    what makes proper nouns untappable in the reader for free.
+ *    `p` but no `t`, because it gets no lexicon entry — which is also what makes
+ *    proper nouns untappable in the reader for free.
+ *
+ * ## Names that are about to change
+ *
+ * `Paragraph` and `BookId` are inherited names for things Rocola calls
+ * something else. A `Line` of lyrics is structurally a `Paragraph` of tokens and
+ * a `trackId` is structurally a `BookId`, so both are kept verbatim through the
+ * fork and renamed in Phase 3, when `Track` and `LyricDocument` (SPEC §6.1,
+ * §6.2) exist to rename them *to*. Renaming them now would mean inventing the
+ * Rocola data model in a commit whose job is to remove the Molcajete one.
  */
 
 export type LemmaKey = string
 export type BookId = string
-
-export const SUPPORTED_SCHEMA_VERSION = 1
 
 /** A whitespace run. Carries no lemma, no POS and no lexicon key. */
 export interface WhitespaceToken {
@@ -46,17 +51,6 @@ export type Token = WhitespaceToken | WordToken
 export interface Paragraph {
   id: string
   tokens: Token[]
-}
-
-export interface Chapter {
-  index: number
-  title: string
-  tokenCount: number
-  paragraphs: Paragraph[]
-  /** SPEC §5 teach set. Stored verbatim; Phase 4 is what reads it. */
-  teachSet: LemmaKey[]
-  /** Gets the dotted underline in the reader, and nothing else. */
-  glossOnly: LemmaKey[]
 }
 
 export interface Example {
@@ -85,23 +79,6 @@ export interface LexiconEntry {
 }
 
 export type Lexicon = Record<LemmaKey, LexiconEntry>
-
-export interface BookMeta {
-  id: BookId
-  title: string
-  author: string
-  language: string
-  variant: string
-  totalTokens: number
-  uniqueLemmas: number
-}
-
-export interface Bundle {
-  schemaVersion: number
-  book: BookMeta
-  chapters: Chapter[]
-  lexicon: Lexicon
-}
 
 /** True for tokens the reader turns into a tappable span. */
 export function isTappable(token: Token): token is WordToken & { t: LemmaKey } {

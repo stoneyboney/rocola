@@ -1,22 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { parseBundle } from '../../src/domain/bundle/parseBundle'
-import {
-  computeCoverage,
-  countChapterVocabulary,
-} from '../../src/domain/coverage'
+import { computeCoverage, countVocabulary } from '../../src/domain/coverage'
 import { lemmaId } from '../../src/domain/lemma'
-import type { Chapter, LexiconEntry, Token } from '../../src/domain/types'
-import { readFixture } from '../fixture'
+import type { LexiconEntry, Paragraph, Token } from '../../src/domain/types'
+import { LEXICON, lexiconMap, paragraphs } from '../fixture'
 
-function chapter(tokens: Token[]): Chapter {
-  return {
-    index: 0,
-    title: 'Capítulo 1',
-    tokenCount: tokens.filter((t) => t.ws !== true && t.l !== undefined).length,
-    paragraphs: [{ id: 'c0p0', tokens }],
-    teachSet: [],
-    glossOnly: [],
-  }
+/** One paragraph of the given tokens, exactly as handed in. */
+function text(tokens: Token[]): Paragraph[] {
+  return [{ id: 'p0', tokens }]
 }
 
 const word = (s: string, l: string, t: string): Token => ({ s, l, p: 'NOUN', t })
@@ -35,10 +25,10 @@ function entry(lemma: string): LexiconEntry {
   }
 }
 
-describe('countChapterVocabulary', () => {
+describe('countVocabulary', () => {
   it('counts words, and only words', () => {
-    const vocabulary = countChapterVocabulary(
-      chapter([
+    const vocabulary = countVocabulary(
+      text([
         word('casa', 'casa', 'm1'),
         space,
         punct(','),
@@ -57,8 +47,8 @@ describe('countChapterVocabulary', () => {
   })
 
   it('separates proper nouns out — they have a lemma but no key', () => {
-    const vocabulary = countChapterVocabulary(
-      chapter([word('casa', 'casa', 'm1'), space, propn('Demetrio', 'demetrio')]),
+    const vocabulary = countVocabulary(
+      text([word('casa', 'casa', 'm1'), space, propn('Demetrio', 'demetrio')]),
     )
 
     expect(vocabulary.tokenCount).toBe(2)
@@ -73,8 +63,8 @@ describe('computeCoverage', () => {
     ['m2', entry('perro')],
   ])
 
-  const vocabulary = countChapterVocabulary(
-    chapter([
+  const vocabulary = countVocabulary(
+    text([
       word('casa', 'casa', 'm1'),
       space,
       word('casa', 'casa', 'm1'),
@@ -117,32 +107,46 @@ describe('computeCoverage', () => {
   })
 
   it('calls an empty chapter fully covered rather than dividing by zero', () => {
-    expect(computeCoverage(countChapterVocabulary(chapter([])), lexicon, new Set()))
+    expect(computeCoverage(countVocabulary([]), lexicon, new Set()))
       .toBe(1)
   })
 })
 
-describe('against the real fixture', () => {
-  const bundle = parseBundle(readFixture())
-  const lexicon = new Map(Object.entries(bundle.lexicon))
+describe('against the synthetic fixture', () => {
+  const lexicon = lexiconMap()
 
-  it('agrees with the tokenCount the pipeline wrote', () => {
-    // The measurement the denominator rests on: `tokenCount` is exactly the
-    // count of tokens carrying a lemma, and it partitions into keyed + PROPN.
-    for (const chapter of bundle.chapters) {
-      const vocabulary = countChapterVocabulary(chapter)
-      const keyed = [...vocabulary.counts.values()].reduce((a, b) => a + b, 0)
+  it('partitions every word token into keyed or proper noun', () => {
+    // The measurement the denominator rests on. Countable by reading
+    // tests/fixture.ts: 17 word tokens, 16 keyed, 1 name.
+    const vocabulary = countVocabulary(paragraphs())
+    const keyed = [...vocabulary.counts.values()].reduce((a, b) => a + b, 0)
 
-      expect(vocabulary.tokenCount).toBe(chapter.tokenCount)
-      expect(keyed + vocabulary.propnTokens).toBe(chapter.tokenCount)
-    }
+    expect(vocabulary.tokenCount).toBe(17)
+    expect(keyed).toBe(16)
+    expect(vocabulary.propnTokens).toBe(1)
+    expect(keyed + vocabulary.propnTokens).toBe(vocabulary.tokenCount)
   })
 
   it('starts low and reaches 1 when the whole lexicon is known', () => {
-    const vocabulary = countChapterVocabulary(bundle.chapters[0]!)
-    const everything = new Set(Object.values(bundle.lexicon).map(lemmaId))
+    const vocabulary = countVocabulary(paragraphs())
+    const everything = new Set(Object.values(LEXICON).map(lemmaId))
 
-    expect(computeCoverage(vocabulary, lexicon, new Set())).toBeLessThan(0.2)
+    // Only Durango is free, and it is 1 token of 17.
+    expect(computeCoverage(vocabulary, lexicon, new Set())).toBeCloseTo(1 / 17)
     expect(computeCoverage(vocabulary, lexicon, everything)).toBe(1)
+  })
+
+  it('is dominated by the words it will never teach', () => {
+    // 8 of the 16 keyed tokens are el/de/y. Learning every open-class word in
+    // the text reaches 9 of 17 — the ceiling the closed-class rule imposes,
+    // and the reason SPEC §8's Anki seed exists.
+    const vocabulary = countVocabulary(paragraphs())
+    const openClass = new Set(
+      Object.values(LEXICON)
+        .filter((e) => !['DET', 'ADP', 'CCONJ'].includes(e.pos))
+        .map(lemmaId),
+    )
+
+    expect(computeCoverage(vocabulary, lexicon, openClass)).toBeCloseTo(9 / 17)
   })
 })

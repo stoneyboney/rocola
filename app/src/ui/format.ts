@@ -4,22 +4,11 @@
  * can stay language-neutral and port to Swift without dragging copy along.
  */
 
-import {
-  BundleFormatError,
-  UnsupportedSchemaVersionError,
-} from '../domain/bundle/parseBundle'
-import { KnownFormatError } from '../domain/bundle/parseKnown'
 import { UnrecognisedFileError, type ImportOutcome } from '../app/importFile'
+import { KnownFormatError } from '../domain/bundle/parseKnown'
+import { COVERAGE_WARNING_THRESHOLD } from '../domain/coverage'
 
 const numbers = new Intl.NumberFormat('de-DE')
-
-export function words(value: number): string {
-  return `${numbers.format(value)} Wörter`
-}
-
-export function chapters(value: number): string {
-  return value === 1 ? '1 Kapitel' : `${numbers.format(value)} Kapitel`
-}
 
 export function lemmas(value: number): string {
   return `${numbers.format(value)} Lemmata`
@@ -37,12 +26,9 @@ export function sessions(value: number): string {
   return value === 1 ? '1 Sitzung' : `${numbers.format(value)} Sitzungen`
 }
 
-/** The chapter list's status chip. Null when there is nothing to learn. */
-export function cardsToLearn(count: number, sessionCount: number): string | null {
-  if (count === 0) return null
-  return sessionCount === 1
-    ? `${cards(count)} lernen`
-    : `${cards(count)} lernen · ${sessions(sessionCount)}`
+/** A song's status chip. Null when there is nothing to learn. */
+export function cardsToLearn(count: number): string | null {
+  return count === 0 ? null : `${cards(count)} lernen`
 }
 
 /** SPEC §6.3's four FSRS buttons. */
@@ -53,7 +39,7 @@ export const GRADE_LABELS = {
   easy: 'Leicht',
 } as const
 
-/** The library's due chip. Null when nothing is due — no chip, no nagging. */
+/** The home screen's due chip. Null when nothing is due — no chip, no nagging. */
 export function dueCards(count: number): string | null {
   return count === 0 ? null : `${cards(count)} fällig`
 }
@@ -63,32 +49,20 @@ export function sessionProgress(answered: number, total: number): string {
 }
 
 /**
- * SPEC §13.2: coverage's real job is to say whether the *book* suits you, not
- * whether you are ready for the chapter. So the warning is about the book. It
+ * SPEC §11.2's soft warning, and nothing more than a warning — CLAUDE.md §7
+ * forbids any path where a low figure blocks, hides or locks the reader. It
  * never appears next to a lock, because there is no lock.
+ *
+ * The threshold is imported rather than repeated. Molcajete's copy hard-coded
+ * 0.9 next to a constant that also said 0.9, which is one place too many for a
+ * number the spec expects to be tuned by feel.
  */
 export function coverageNote(fraction: number): string | null {
-  if (fraction >= 0.9) return null
+  if (fraction >= COVERAGE_WARNING_THRESHOLD) return null
   if (fraction < 0.6) {
-    return `Nur ${percent(fraction)} Abdeckung — dieses Buch ist im Moment sehr anspruchsvoll.`
+    return `Nur ${percent(fraction)} Abdeckung — dieses Lied ist im Moment sehr anspruchsvoll.`
   }
-  return `${percent(fraction)} Abdeckung — dieses Buch fordert viel Wortschatz.`
-}
-
-/**
- * The line under the book title when the whole book is far out of reach.
- * SPEC §13.2 again: "If a chapter needs five sessions to clear 90%, switch
- * books — that signal is worth more than a lock screen."
- */
-export function bookDifficultyNote(
-  fraction: number,
-  sessionCount: number,
-): string | null {
-  if (fraction >= 0.9 || sessionCount <= 3) return null
-  // Deliberately not "um auf 90 % zu kommen" — the number is how many sessions
-  // the whole teach set needs, which is not the same as the point at which
-  // coverage crosses the threshold. Say the thing that is actually true.
-  return `Bei ${percent(fraction)} Abdeckung stehen noch ${sessions(sessionCount)} an. Ein leichteres Buch liest sich vielleicht besser.`
+  return `${percent(fraction)} Abdeckung — dieses Lied fordert viel Wortschatz.`
 }
 
 export interface ImportFailure {
@@ -98,11 +72,6 @@ export interface ImportFailure {
 
 /** What an import actually did, once it worked. */
 export function describeImportSuccess(outcome: ImportOutcome): string {
-  if (outcome.kind === 'book') {
-    return outcome.replaced
-      ? `„${outcome.title}“ ersetzt · ${chapters(outcome.chapterCount)}`
-      : `„${outcome.title}“ importiert · ${chapters(outcome.chapterCount)}`
-  }
   if (outcome.added === 0) {
     // Re-importing the same seed. Worth saying out loud, or it looks broken.
     return `Nichts Neues — diese ${lemmas(outcome.inFile)} sind schon bekannt.`
@@ -112,7 +81,7 @@ export function describeImportSuccess(outcome: ImportOutcome): string {
 
 /**
  * German for the user, the validator's own message underneath it. The technical
- * line stays in English and stays visible: when a bundle is rejected the next
+ * line stays in English and stays visible: when a file is rejected the next
  * step is on the desktop, in the pipeline, and the path that failed is the
  * thing worth knowing there.
  */
@@ -120,25 +89,12 @@ export function describeImportFailure(error: unknown): ImportFailure {
   if (error instanceof UnrecognisedFileError) {
     return {
       headline: 'Diese Datei kennt die App nicht.',
-      detail:
-        'Erwartet wird ein .molcajete.json aus der Pipeline oder ein known.json aus seed_known.py.',
+      detail: 'Erwartet wird ein known.json aus seed_known.py.',
     }
   }
   if (error instanceof KnownFormatError) {
     return {
       headline: 'Diese known.json ist nicht lesbar.',
-      detail: error.message,
-    }
-  }
-  if (error instanceof UnsupportedSchemaVersionError) {
-    return {
-      headline: `Dieses Bundle hat Schemaversion ${String(error.found)}. Diese App liest Version ${error.supported}.`,
-      detail: 'Bundle mit der aktuellen Pipeline neu erzeugen.',
-    }
-  }
-  if (error instanceof BundleFormatError) {
-    return {
-      headline: 'Die Datei ist kein gültiges Molcajete-Bundle.',
       detail: error.message,
     }
   }

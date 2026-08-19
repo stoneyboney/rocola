@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { loadSession, type SessionContext } from '../app/loadSession'
+import { useCallback, useState } from 'react'
 import { useRepositories } from '../app/repositories'
-import { useAsync } from '../app/useAsync'
-import { navigate } from '../app/useRoute'
 import type { ReviewGrade } from '../domain/srs/scheduler'
+import type { LemmaKey, LexiconEntry } from '../domain/types'
 import {
   grade as applyGrade,
   introduce as applyIntroduce,
@@ -29,38 +27,38 @@ const GRADES: ReviewGrade[] = ['again', 'hard', 'good', 'easy']
  *
  * **It computes nothing** (rule 5). Phase, current card, progress and the
  * German copy all arrive ready-made.
+ *
+ * ## Why it takes a session rather than fetching one
+ *
+ * Molcajete's version took a `bookId` and a `chapterIndex` and called
+ * `loadSession` to turn them into a session and a lexicon slice. That loader was
+ * entirely about finding a chapter, and it is gone with the chapter (SPEC §3).
+ *
+ * Rather than delete the screen with it, the loading moved out: it now receives
+ * a session and the lexicon that glosses it, and owns only the part that was
+ * never book-shaped — reveal, grade, commit, resume. Phase 3 supplies both from
+ * a `Track` and calls this unchanged.
+ *
+ * Nothing routes here yet. That is expected: this build has no songs.
  */
 export function TeachingSession({
-  bookId,
-  chapterIndex,
+  session: initial,
+  lexicon,
+  onBack,
+  onDone,
 }: {
-  bookId: string
-  chapterIndex: number
+  session: Session
+  lexicon: ReadonlyMap<LemmaKey, LexiconEntry>
+  /** Where the back control goes. The caller owns navigation. */
+  onBack: { label: string; onClick: () => void }
+  /** Offered when the session completes. Omit and no button is drawn. */
+  onDone?: { label: string; onClick: () => void }
 }) {
-  const { books, cards, known, sessions, clock } = useRepositories()
+  const { cards, sessions, clock } = useRepositories()
 
-  const loaded = useAsync<SessionContext | null>(
-    () =>
-      loadSession(bookId, chapterIndex, { books, cards, known, sessions }, clock.now()),
-    [books, cards, known, sessions, clock, bookId, chapterIndex],
-  )
-
-  const [session, setSession] = useState<Session | null>(null)
+  const [session, setSession] = useState<Session>(initial)
   const [revealed, setRevealed] = useState(false)
   const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    if (loaded.status === 'ready' && loaded.value) setSession(loaded.value.session)
-  }, [loaded])
-
-  const toChapters = useCallback(
-    () => navigate({ name: 'chapters', bookId }),
-    [bookId],
-  )
-  const toReader = useCallback(
-    () => navigate({ name: 'reader', bookId, chapterIndex }),
-    [bookId, chapterIndex],
-  )
 
   const commit = useCallback(
     async (next: Session, effects: Parameters<typeof sessions.commit>[1]) => {
@@ -90,7 +88,7 @@ export function TeachingSession({
       if (!session || busy) return
       const card = session.queue[0]
       if (!card) return
-      // The word may already have a schedule from an earlier chapter or book.
+      // The word may already have a schedule from an earlier song.
       const existing = await cards.get(card.lemmaId)
       const step = applyGrade(session, reviewGrade, clock.now(), existing)
       void commit(step.session, step.effects)
@@ -98,26 +96,14 @@ export function TeachingSession({
     [session, busy, cards, clock, commit],
   )
 
-  if (loaded.status !== 'ready' || !session) {
-    return <Screen title="Lernen" back={{ label: 'Kapitel', onClick: toChapters }}>{null}</Screen>
-  }
-
-  if (!loaded.value) {
-    return (
-      <Screen title="Nicht gefunden" back={{ label: 'Kapitel', onClick: toChapters }}>
-        <p className="text-ink-muted text-sm">Dieses Kapitel ist nicht mehr da.</p>
-      </Screen>
-    )
-  }
-
-  const view = buildSessionView(session, loaded.value.lexicon)
+  const view = buildSessionView(session, lexicon)
 
   if (view.phase === 'complete') {
     return (
-      <Screen title="Fertig" back={{ label: 'Kapitel', onClick: toChapters }}>
+      <Screen title="Fertig" back={onBack}>
         <p className="text-lg">
           {view.total === 0
-            ? 'Für dieses Kapitel gibt es nichts mehr zu lernen.'
+            ? 'Hier gibt es nichts mehr zu lernen.'
             : `${sessionProgress(view.passed + view.dismissed, view.total)} Karten erledigt.`}
         </p>
         {view.dismissed > 0 && (
@@ -125,13 +111,15 @@ export function TeachingSession({
             {view.dismissed} davon kanntest du schon.
           </p>
         )}
-        <button
-          type="button"
-          onClick={toReader}
-          className="bg-accent mt-8 w-full rounded-xl px-4 py-3.5 text-base text-white"
-        >
-          Kapitel lesen
-        </button>
+        {onDone && (
+          <button
+            type="button"
+            onClick={onDone.onClick}
+            className="bg-accent mt-8 w-full rounded-xl px-4 py-3.5 text-base text-white"
+          >
+            {onDone.label}
+          </button>
+        )}
       </Screen>
     )
   }
@@ -139,7 +127,7 @@ export function TeachingSession({
   const card = view.card!
 
   return (
-    <Screen title="Lernen" back={{ label: 'Kapitel', onClick: toChapters }}>
+    <Screen title="Lernen" back={onBack}>
       <div className="flex items-center gap-3">
         <span className="bg-rule h-1 flex-1 overflow-hidden rounded-full">
           <span

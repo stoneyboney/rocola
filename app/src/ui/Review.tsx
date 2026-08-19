@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRepositories } from '../app/repositories'
-import { LIBRARY } from '../app/routes'
+import { HOME } from '../app/routes'
 import { useAsync } from '../app/useAsync'
 import { useGoBack } from '../app/useRoute'
 import {
@@ -29,7 +29,7 @@ const GRADES: ReviewGrade[] = ['again', 'hard', 'good', 'easy']
  */
 export function Review() {
   const { cards, clock } = useRepositories()
-  const goBack = useGoBack(LIBRARY)
+  const goBack = useGoBack(HOME)
 
   const due = useAsync(() => cards.listDue(clock.now()), [cards, clock])
 

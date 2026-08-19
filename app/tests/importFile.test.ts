@@ -5,6 +5,10 @@
  * against the system's idea of a file type and a double extension is not one —
  * so the extension was never available as a discriminator, and AirDrop renaming
  * a file has to stay harmless.
+ *
+ * One shape is accepted, where Molcajete took two. The bundle is gone with the
+ * EPUB pipeline (SPEC §3) and the object arm now falls through to a refusal;
+ * Phase 3 fills it with the song document.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -14,64 +18,16 @@ import {
   type ImportTargets,
 } from '../src/app/importFile'
 import { KnownFormatError } from '../src/domain/bundle/parseKnown'
-import { UnsupportedSchemaVersionError } from '../src/domain/bundle/parseBundle'
-import { FakeBookRepository, FakeKnownLemmaRepository } from './fakes'
-import { readFixture, readFixtureText } from './fixture'
+import { FakeKnownLemmaRepository } from './fakes'
 
 function targets(): ImportTargets & { known: FakeKnownLemmaRepository } {
-  return { books: new FakeBookRepository(), known: new FakeKnownLemmaRepository() }
+  return { known: new FakeKnownLemmaRepository() }
 }
 
 /** A `File` without a DOM: only `.text()` is ever called. */
 function file(contents: string, name = 'whatever.json'): File {
   return { name, text: async () => contents } as unknown as File
 }
-
-describe('importing a bundle', () => {
-  it('stores the book and reports what it did', async () => {
-    const t = targets()
-    const outcome = await importFile(file(readFixtureText()), t)
-
-    expect(outcome.kind).toBe('book')
-    if (outcome.kind !== 'book') return
-    expect(outcome.bookId).toBe('anonimo-los-del-cerro')
-    expect(outcome.chapterCount).toBe(3)
-    expect(outcome.replaced).toBe(false)
-    expect(await t.books.getBook('anonimo-los-del-cerro')).toBeDefined()
-  })
-
-  it('reports a re-import as a replacement', async () => {
-    const t = targets()
-    await importFile(file(readFixtureText()), t)
-    const again = await importFile(file(readFixtureText()), t)
-
-    expect(again.kind === 'book' && again.replaced).toBe(true)
-  })
-
-  it('does not care what the file is called', async () => {
-    const t = targets()
-    const outcome = await importFile(file(readFixtureText(), 'Unbenannt-3.json'), t)
-
-    expect(outcome.kind).toBe('book')
-  })
-
-  it('names the schema version when it cannot read one', async () => {
-    const stale = readFixture()
-    stale.schemaVersion = 99
-    await expect(
-      importFile(file(JSON.stringify(stale)), targets()),
-    ).rejects.toThrow(UnsupportedSchemaVersionError)
-  })
-
-  it('writes nothing when the bundle is rejected', async () => {
-    const t = targets()
-    const broken = readFixture()
-    delete broken.chapters
-    await expect(importFile(file(JSON.stringify(broken)), t)).rejects.toThrow()
-
-    expect(await t.books.listBooks()).toEqual([])
-  })
-})
 
 describe('importing a known.json', () => {
   it('marks the lemmas known and counts what was new', async () => {
@@ -111,11 +67,30 @@ describe('importing a known.json', () => {
       KnownFormatError,
     )
   })
+
+  it('does not care what the file is called', async () => {
+    // The claim the header makes, and the reason the dispatch is on shape:
+    // AirDrop renames files and iOS cannot narrow `accept` past `.json`.
+    const t = targets()
+    const outcome = await importFile(file('["perro"]', 'Unbenannt-3.json'), t)
+
+    expect(outcome.kind).toBe('known')
+  })
+
+  it('writes nothing when the seed is rejected', async () => {
+    const t = targets()
+    await expect(importFile(file('["perro",7]'), t)).rejects.toThrow()
+
+    expect(await t.known.listAll()).toEqual(new Set())
+  })
 })
 
 describe('anything else', () => {
   it('is refused by shape rather than guessed at', async () => {
-    for (const contents of ['not json at all', '"a string"', '42', 'null']) {
+    // `{}` is in this list where Molcajete would have tried to parse it as a
+    // bundle. The object arm is free again, which is what Phase 3 uses for the
+    // song document — the button and this dispatch do not change.
+    for (const contents of ['not json at all', '"a string"', '42', 'null', '{}']) {
       await expect(importFile(file(contents), targets())).rejects.toThrow(
         UnrecognisedFileError,
       )
