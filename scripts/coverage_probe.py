@@ -89,6 +89,14 @@ SEED_ARTISTS = [
     "molotov",
     "los bitchos",
     "ray lozano",
+    # Found by scanning the artist list rather than from memory. Vicente
+    # Fernández, Molotov and Ray Lozano are in the 12-month *artist* chart but
+    # have no track-level rows in `overall` at all, so they contribute nothing
+    # however deep the paging goes.
+    "shakira",
+    "café tacvba",
+    "cafe tacvba",
+    "shakira featuring wyclef jean",
 ]
 
 
@@ -245,6 +253,31 @@ def table(rows: list[Row]) -> str:
     return "\n".join(out) + "\n"
 
 
+def by_artist(rows: list[Row]) -> str:
+    """Coverage per artist.
+
+    The cut that actually answers "can LRCLIB serve my Spanish rotation" — an
+    aggregate mixes an English-singing Spanish band and an instrumental cumbia
+    group in with the rest and reports a number that describes neither.
+    """
+    artists: dict[str, list[Row]] = {}
+    for row in rows:
+        artists.setdefault(row.artist, []).append(row)
+
+    lines = [
+        "| artist | n | resolved | es-confirmed | missed |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for artist, group in sorted(artists.items(), key=lambda kv: -len(kv[1])):
+        resolved = sum(1 for r in group if r.status == "resolved")
+        spanish = sum(1 for r in group if r.is_spanish)
+        missed = sum(1 for r in group if r.status == "no_lyrics")
+        lines.append(
+            f"| {artist} | {len(group)} | {resolved} | {spanish} | {missed} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def listing(rows: list[Row], predicate, heading: str) -> str:
     chosen = [r for r in rows if predicate(r)]
     if not chosen:
@@ -261,6 +294,9 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="select, do not fetch")
     parser.add_argument("--limit", type=int, default=150, help="sample 1 size")
     parser.add_argument("--seed-artist", action="append", default=[], metavar="NAME")
+    parser.add_argument(
+        "--pages", type=int, default=6, help="pages of 1000 to walk for sample 2"
+    )
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -282,7 +318,10 @@ def main() -> int:
     print(f"  {len(twelve)} returned, {len(twelve) - len([t for t in twelve if not is_drama(t)])} drama rows dropped, {len(sample1)} kept")
 
     print("\nSample 2: artist-seeded Spanish pool over 'overall'…")
-    overall = lastfm.top_tracks("overall", 1000)
+    # Paged deeply on purpose. `Die drei ???` alone is 10,378 plays across
+    # hundreds of chapter rows, which pushes the Spanish rotation — a few plays
+    # each, spread thin — well past the first page of 1000.
+    overall = lastfm.top_tracks("overall", 1000, max_pages=args.pages)
     sample2 = [t for t in overall if t.artist.strip().lower() in seeds]
     print(f"  {len(overall)} returned, {len(sample2)} by the {len(seeds)} seeded artists")
     found = sorted({t.artist for t in sample2})
@@ -325,6 +364,10 @@ def main() -> int:
                 "Every track by the seeded Hispanophone artists, over `overall`.",
                 "",
                 table(rows2),
+                "",
+                "### Per artist",
+                "",
+                by_artist(rows2),
                 "",
                 listing(rows2, lambda r: r.status == "no_lyrics", "Misses"),
                 "",

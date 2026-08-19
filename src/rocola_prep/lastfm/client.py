@@ -144,41 +144,68 @@ class LastfmClient:
 
     # -- user.getTopTracks -------------------------------------------------
 
-    def top_tracks(self, period: str = "overall", limit: int = 200) -> list[Track]:
+    def top_tracks(
+        self,
+        period: str = "overall",
+        limit: int = 200,
+        *,
+        max_pages: int = 1,
+    ) -> list[Track]:
         """Most-played tracks over `period`, already deduplicated.
 
         The natural instrument for "top N by playcount over a window", and one
         request where walking `getRecentTracks` over the same window would be
         dozens.
+
+        **`limit` is a page size, not a total.** last.fm caps a page at 1000 and
+        paginates beyond it, so a caller wanting the long tail has to ask for
+        more pages. That matters more than it sounds: a listener whose history
+        is dominated by one artist has everything else pushed past the first
+        page, and a client reading only page 1 reports that the rest of their
+        library does not exist.
         """
         if period not in PERIODS:
             raise LastfmError(f"period must be one of {PERIODS}, not {period!r}")
 
-        payload = self._call(
-            "user.getTopTracks", period=period, limit=min(limit, 1000)
-        )
-        raw = payload.get("toptracks", {}).get("track", [])
-        if isinstance(raw, dict):
-            raw = [raw]
-
         tracks: list[Track] = []
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            title = str(item.get("name") or "")
-            artist = _artist_name(item.get("artist"))
-            if not title or not artist:
-                continue
-            tracks.append(
-                Track(
-                    title=title,
-                    artist=artist,
-                    norm=normalise(title, artist),
-                    playcount=_int(item.get("playcount")),
-                    mbid=str(item.get("mbid")) or None if item.get("mbid") else None,
-                    duration=_float_or_none(item.get("duration")),
-                )
+        page = 1
+        while page <= max_pages:
+            payload = self._call(
+                "user.getTopTracks",
+                period=period,
+                limit=min(limit, 1000),
+                page=page,
             )
+            section = payload.get("toptracks", {})
+            raw = section.get("track", [])
+            if isinstance(raw, dict):
+                raw = [raw]
+            if not raw:
+                break
+
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("name") or "")
+                artist = _artist_name(item.get("artist"))
+                if not title or not artist:
+                    continue
+                tracks.append(
+                    Track(
+                        title=title,
+                        artist=artist,
+                        norm=normalise(title, artist),
+                        playcount=_int(item.get("playcount")),
+                        mbid=str(item.get("mbid")) or None if item.get("mbid") else None,
+                        duration=_float_or_none(item.get("duration")),
+                    )
+                )
+
+            total_pages = _int(section.get("@attr", {}).get("totalPages"), default=page)
+            if page >= total_pages:
+                break
+            page += 1
+
         return dedupe(tracks)
 
     # -- user.getRecentTracks ---------------------------------------------

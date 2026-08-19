@@ -106,6 +106,79 @@ class TestTopTracks:
         assert [t.title for t in client_for(handler).top_tracks()] == ["Bien"]
 
 
+class TestTopTrackPaging:
+    def test_reads_one_page_by_default(self) -> None:
+        pages: list[int] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            pages.append(int(request.url.params.get("page", 1)))
+            return httpx.Response(
+                200,
+                json={
+                    "toptracks": {
+                        "track": [top_track("Una", "Artista", 5)],
+                        "@attr": {"totalPages": "9"},
+                    }
+                },
+            )
+
+        client_for(handler).top_tracks()
+        assert pages == [1]
+
+    def test_walks_further_when_asked(self) -> None:
+        # The gap this closes: a history dominated by one artist pushes
+        # everything else past page 1, and a client reading only page 1 reports
+        # that the rest of the library does not exist.
+        pages: list[int] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            page = int(request.url.params.get("page", 1))
+            pages.append(page)
+            return httpx.Response(
+                200,
+                json={
+                    "toptracks": {
+                        "track": [top_track(f"Track {page}", "Artista", 10 - page)],
+                        "@attr": {"totalPages": "3"},
+                    }
+                },
+            )
+
+        tracks = client_for(handler).top_tracks(max_pages=5)
+        assert pages == [1, 2, 3], "must stop at totalPages, not at max_pages"
+        assert len(tracks) == 3
+
+    def test_stops_at_max_pages_even_when_more_exist(self) -> None:
+        pages: list[int] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            page = int(request.url.params.get("page", 1))
+            pages.append(page)
+            return httpx.Response(
+                200,
+                json={
+                    "toptracks": {
+                        "track": [top_track(f"Track {page}", "Artista", 1)],
+                        "@attr": {"totalPages": "100"},
+                    }
+                },
+            )
+
+        client_for(handler).top_tracks(max_pages=2)
+        assert pages == [1, 2]
+
+    def test_an_empty_page_ends_the_walk(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            page = int(request.url.params.get("page", 1))
+            tracks = [top_track("Una", "Artista", 5)] if page == 1 else []
+            return httpx.Response(
+                200,
+                json={"toptracks": {"track": tracks, "@attr": {"totalPages": "50"}}},
+            )
+
+        assert len(client_for(handler).top_tracks(max_pages=10)) == 1
+
+
 class TestErrorInsideA200:
     def test_an_error_body_with_status_200_raises(self) -> None:
         # The failure this client exists to notice. Without the check, a
