@@ -2,7 +2,7 @@ name: Deploy
 
 # The whole deploy step is `git push`. Enable it once under
 # Settings -> Pages -> Source -> GitHub Actions; after that this is the only
-# thing that publishes, and the site is https://<user>.github.io/molcajete/.
+# thing that publishes, and the site is https://<user>.github.io/rocola/.
 on:
   push:
     branches: [main]

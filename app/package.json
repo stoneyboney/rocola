@@ -1,6 +1,6 @@
 {
-  "name": "molcajete",
-  "version": "0.3.0",
+  "name": "rocola",
+  "version": "0.1.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
