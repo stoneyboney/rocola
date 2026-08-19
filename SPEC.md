@@ -1,462 +1,552 @@
-# Molcajete — Technical Specification v1.0
+# Rocola — Spec v1
 
-**A pre-teaching Spanish reader for iPhone and iPad**
+**A Spanish song-lyrics reader, forked from Molcajete.**
 
-Personal tool. Single user. Offline-first. Spanish (Mexican) as target language, German and English as native languages.
-
-### On the name
-
-A *molcajete* is the basalt mortar and pestle of Mexican kitchens, from Nahuatl *molcaxitl*. You grind things down before you consume them — which is exactly what this app does with a chapter's vocabulary. The word carries no negative slang, is unmistakably Mexican rather than merely Spanish, and in Monterrey it is also a restaurant dish, so it lands warmly with native speakers.
-
-Home-screen label: `Molcajete` (10 characters, fits without truncation).
-Bundle extension: `.molcajete.json`.
+Status: draft, pre-implementation
+Companion documents: `molcajete-spec-v1.md`, `rocola-CLAUDE.md`
+Date: 2026-08
 
 ---
 
-## 1. The core idea
+## 1. Purpose and scope
 
-Every existing reader app is *reactive*: you read, you hit a wall, you tap the word, you review it later. Molcajete is *proactive*: before you are allowed into a chapter, the app teaches you the vocabulary that chapter actually requires, using spaced-repetition flashcards. You then read the chapter with ~98% word coverage, which is the threshold at which reading becomes pleasant rather than effortful.
+Rocola applies the Molcajete model — **pre-teach the vocabulary, then unlock the text** — to Spanish song lyrics. It is a *reading* app. Content selection is driven by the user's actual listening history via last.fm.
 
-**The one-sentence spec:** *EPUB in → chapter-scoped flashcard sessions → comfortable reading, offline, on the sofa and on the train.*
+### 1.1 In scope
 
----
+- Pan-Hispanic Spanish lyrics (not limited to Mexican music)
+- Lyric text acquisition via LRCLIB, plain lyrics only
+- Song selection driven by last.fm scrobble history
+- Dialect-aware glossing with a configured home dialect (`es-MX`)
+- Stanza-aware reader with tap-to-reveal glosses
+- FSRS-scheduled flashcards, inherited unchanged from Molcajete
 
-## 2. Scope
+### 1.2 Explicit non-goals
 
-### In scope for v1
-- Import a prepared book bundle
-- Pre-chapter vocabulary teaching with FSRS scheduling
-- Distraction-free reader with tap-to-gloss
-- Full offline operation after import
-- Seeding "known words" from an existing Anki collection
-- ES / DE / EN on every card
+These are **out of scope for v1** and should not be built speculatively:
 
-### Explicitly out of scope for v1
-- Audio and read-along
-- Any account system, server, or sync
-- Any network call at runtime
-- Grammar explanation features
-- Multiple users, multiple target languages
-- App Store distribution
+- Time-synced lyrics, LRC parsing, karaoke display
+- Audio playback of any kind; no embedded player
+- Listening exercises, cloze, dictation ("de oído" mode — deferred)
+- Forced alignment / Whisper / word-level timing
+- Spotify Web Playback SDK, Apple MusicKit
+- Any redistribution or bundling of lyric text (see §12)
 
-### Non-goals, permanently
-- Gamification, streaks, leaderboards
-- Replacing Anki for non-reading vocabulary
+### 1.3 Relationship to Molcajete
+
+Rocola is a **fork at the app layer** and a **shared dependency at the prep layer**. See §5. The two apps may be merged later; nothing in this spec should make that merge harder.
 
 ---
 
-## 3. Architecture
+## 2. Inherited from Molcajete, unchanged
 
-The single most important design decision: **split the system in two.**
+Do not re-litigate these. They are settled.
+
+| Concern | Decision |
+|---|---|
+| Platform | PWA first, with the four Swift-portability rules from `molcajete-spec-v1.md` §2 |
+| Scheduling | FSRS via `ts-fsrs` |
+| Card backs | German primary, English secondary |
+| Session cap | 18 cards |
+| Reader interaction | Tap-to-reveal only, plus a "reveal all glosses" toggle for second passes |
+| Coverage display | Diagnostic with soft warning, **never a gate** |
+| Gloss generation | `GlossProvider` interface; Ollama implementation is the default |
+| Storage | Local-first; no server-side user data |
+
+---
+
+## 3. Removed from the Molcajete inheritance
+
+Delete these code paths in the fork rather than leaving them dormant.
+
+- **EPUB ingest.** No `epub` parsing, no DRM detection, no spine walking.
+- **Chapter splitting.** A song's teach set is 12–20 lemmas, comfortably under the 18-card cap. **One song = one session.** The splitter is dead code.
+- **Paragraph-based reader layout.** Replaced by the stanza model in §6.3.
+- **Book-level progress tracking.** Replaced by per-track state.
+
+---
+
+## 4. New in Rocola
+
+1. last.fm client and selection heuristic (§7.1)
+2. Scrobble → LRCLIB matcher (§8) — *the highest-risk component*
+3. Language filter (§7.3)
+4. Variety (dialect) tagging and home-dialect rendering (§9)
+5. Chorus-deduplicated teach-set builder (§7.4)
+6. Stanza-aware reader (§10)
+7. Deep-link out to a streaming app (§10.4)
+
+---
+
+## 5. Repository and package structure
+
+### 5.1 The shared prep package
+
+Extract the Molcajete prep pipeline into a standalone, locally pip-installable package **before** forking the app. Both projects depend on it by pinned version.
 
 ```
-┌─────────────────────────────────────┐
-│  PREP PIPELINE (Python, desktop)    │
-│  Run once per book. Network OK.     │
-│                                     │
-│  EPUB ──▶ chapters ──▶ lemmas       │
-│       ──▶ frequency ──▶ glosses     │
-│       ──▶ book.molcajete.json          │
-└──────────────┬──────────────────────┘
-               │  (AirDrop / iCloud Drive / file picker)
-               ▼
-┌─────────────────────────────────────┐
-│  READER PWA (TypeScript, on device) │
-│  Zero network. IndexedDB.           │
-│                                     │
-│  import ──▶ teach ──▶ read ──▶ SRS  │
-└─────────────────────────────────────┘
+molcajete-prep/              # NEW shared package
+  pyproject.toml
+  src/molcajete_prep/
+    __init__.py
+    gloss/
+      base.py                # GlossProvider ABC
+      ollama.py
+      claude_batch.py
+    lexicon/
+      wiktionary.py          # kaikki.org dump reader
+      frequency.py           # wordfreq wrapper
+    nlp/
+      pipeline.py            # spaCy setup, lemmatisation
+      normalise.py           # elision, orthographic variants
+    teachset/
+      builder.py             # frequency ranking, known-word filtering
+      coverage.py
+  tests/                     # the existing 333 tests move here
+
+molcajete/                   # existing app repo
+  depends on molcajete-prep==X.Y.Z
+
+rocola/                      # NEW fork
+  depends on molcajete-prep==X.Y.Z
+  src/rocola_prep/
+    lastfm/
+    lrclib/
+    matcher/
+    langfilter/
+    variety/
+  app/                       # PWA
 ```
 
-**Why this split matters:**
+**Rationale.** Every gloss-quality improvement made in one repo would otherwise silently fail to land in the other. Divergence is invisible until the glosses in one app are noticeably worse. This extraction is an afternoon of work now and prevents a miserable reconciliation later.
 
-1. All the hard linguistic work (lemmatization, dictionary lookup, frequency ranking) happens where the mature Python libraries live, on a machine with a keyboard and no battery anxiety.
-2. The app becomes almost trivially simple — it renders pre-computed JSON. No EPUB parser on device, no NLP on device, no network.
-3. The bundle format is the stable contract. **If you later rewrite the app natively in Swift, the prep pipeline is untouched and the bundles still work.** This is the migration insurance.
+### 5.2 What stays forked
+
+The PWA app layer, the reader UI, and the session shell are genuinely different enough to fork. Do not attempt to share React components between the two apps in v1.
 
 ---
 
-## 4. Bundle format (`*.molcajete.json`)
+## 6. Data model
 
-This is the contract between the two halves. Version it from day one.
+### 6.1 Track
 
-```jsonc
-{
-  "schemaVersion": 1,
-  "book": {
-    "id": "villalobos-fiesta-madriguera",
-    "title": "Fiesta en la madriguera",
-    "author": "Juan Pablo Villalobos",
-    "language": "es",
-    "variant": "es-MX",
-    "totalTokens": 21430,
-    "uniqueLemmas": 3120
-  },
-  "chapters": [
-    {
-      "index": 0,
-      "title": "Capítulo 1",
-      "tokenCount": 3200,
-      "paragraphs": [
-        {
-          "id": "c0p0",
-          "tokens": [
-            { "s": "Algunas", "l": "alguno", "p": "DET", "t": 4012 },
-            { "s": " ", "ws": true },
-            { "s": "personas", "l": "persona", "p": "NOUN", "t": 118 }
-          ]
-        }
-      ],
-      "teachSet": ["m0031", "m0044", "m0102"],
-      "glossOnly": ["m0777", "m0778"]
-    }
-  ],
-  "lexicon": {
-    "m0031": {
-      "lemma": "madriguera",
-      "pos": "NOUN",
-      "de": "Bau, Höhle",
-      "en": "burrow, den",
-      "zipf": 2.9,
-      "bookCount": 14,
-      "firstChapter": 0,
-      "mexicanism": false,
-      "example": {
-        "es": "Mi papá dice que somos gente de la madriguera.",
-        "de": "Mein Vater sagt, wir sind Leute des Baus.",
-        "chapterIndex": 0
-      }
-    },
-    "m0102": {
-      "lemma": "chido",
-      "pos": "ADJ",
-      "de": "cool, super",
-      "en": "cool, great",
-      "zipf": 2.1,
-      "bookCount": 6,
-      "mexicanism": true,
-      "regionNote": "MX, coloquial"
-    }
-  }
+```ts
+interface Track {
+  id: string;                  // internal UUID
+  title: string;               // display form, from last.fm
+  artist: string;              // display form, from last.fm
+  album?: string;
+  durationSec?: number;
+
+  // normalised forms used for matching (see §8.1)
+  titleNorm: string;
+  artistNorm: string;
+
+  // external identifiers
+  mbid?: string;               // MusicBrainz, when last.fm supplies it
+  spotifyTrackId?: string;     // for the deep link only
+  lrclibId?: number;
+
+  // selection metadata
+  playcount30d: number;
+  lastPlayedAt: string;        // ISO 8601
+
+  language?: string;           // ISO 639-1, from the classifier
+  languageConfidence?: number; // 0..1
+
+  state: TrackState;
+}
+
+type TrackState =
+  | 'candidate'      // selected from scrobbles, not yet matched
+  | 'no_lyrics'      // matcher exhausted; retry monthly
+  | 'not_spanish'    // classifier rejected
+  | 'ready'          // lyrics + teach set built, not yet studied
+  | 'teaching'       // flashcard session in progress
+  | 'unlocked'       // reader available
+  | 'archived';      // user dismissed
+```
+
+### 6.2 LyricDocument
+
+Lyrics are stored as an ordered list of stanzas, each an ordered list of lines. Blank lines in the LRCLIB plain text are the stanza delimiter.
+
+```ts
+interface LyricDocument {
+  trackId: string;
+  source: 'lrclib' | 'manual';
+  fetchedAt: string;
+  stanzas: Stanza[];
+  lineNotes: LineNote[];       // cultural / idiomatic annotations
+}
+
+interface Stanza {
+  index: number;
+  lines: Line[];
+  repeatOf?: number;           // set when this stanza duplicates an earlier one
+}
+
+interface Line {
+  index: number;               // global line index within the document
+  text: string;                // raw, as fetched
+  tokens: Token[];
+}
+
+interface Token {
+  surface: string;             // as written, e.g. "pa'"
+  normalised: string;          // e.g. "para"
+  lemma: string;
+  pos: string;
+  senseId?: string;            // null for words the user already knows
+  isElided: boolean;
 }
 ```
 
-**Token fields** are deliberately terse because they dominate file size:
-`s` = surface form, `l` = lemma id or lemma string, `p` = POS tag, `t` = lexicon key, `ws` = whitespace-only token.
+### 6.3 Sense — the variety extension
 
-**Size expectation:** a 70-page novel lands around 1.5–4 MB uncompressed. Gzip the file; IndexedDB stores the parsed object. Well within iOS limits.
+This is the significant schema change from Molcajete.
+
+```ts
+type Variety =
+  | 'general'   // pan-Hispanic, no regional marking
+  | 'es-MX' | 'es-AR' | 'es-ES' | 'es-CO' | 'es-CL'
+  | 'es-PE' | 'es-VE' | 'es-PR' | 'es-DO' | 'es-CU'
+  | 'es-UY' | 'es-EC' | 'es-GT' | 'es-BO' | 'es-PY'
+  | 'es-CR' | 'es-PA' | 'es-HN' | 'es-SV' | 'es-NI';
+
+type Register =
+  | 'neutral' | 'coloquial' | 'vulgar' | 'poetic' | 'arcaic' | 'albur';
+
+interface Sense {
+  id: string;
+  lemma: string;
+  pos: string;
+
+  glossDe: string;             // primary card back
+  glossEn: string;             // secondary card back
+
+  variety: Variety;
+  register: Register;
+
+  // Populated only when variety !== 'general' && variety !== homeDialect.
+  // The equivalent term in the user's home dialect, if one exists.
+  homeEquivalent?: string;
+  homeEquivalentNote?: string;
+
+  // Recognition-only morphology (voseo, vosotros). See §9.3.
+  morphNote?: string;
+
+  provider: 'wiktionary-en' | 'wiktionary-de' | 'ollama' | 'manual';
+  confidence?: number;
+}
+```
+
+### 6.4 Configuration
+
+```ts
+interface RocolaConfig {
+  homeDialect: Variety;          // default: 'es-MX'
+  l1: 'de';
+  l2: 'en';
+
+  // selection
+  minPlaycount: number;          // default 3
+  selectionWindowDays: number;   // default 30
+
+  // coverage
+  coverageWarnThreshold: number; // default 0.95 — NOT 0.90, see §11.2
+
+  // language filter
+  minLanguageConfidence: number; // default 0.80
+}
+```
 
 ---
 
-## 5. The vocabulary selection algorithm
+## 7. Pipeline
 
-This is the heart of the app and the part most worth getting right. Naively teaching every unknown word in a chapter produces 200-card sessions and abandonment.
+Six stages. Each is independently runnable and idempotent.
 
-### Step 1 — Determine the unknown set
+### 7.1 Stage 1 — Selection (last.fm)
+
+**Heuristic:** a track becomes a `candidate` when it has been played **≥ `minPlaycount` times within `selectionWindowDays`**.
+
+Endpoints:
+
+- `user.getRecentTracks` — paginated, for the rolling window. Page size 200. Walk back until `lastPlayedAt < now - selectionWindowDays`, then stop.
+- `user.getTopTracks` with `period=1month` / `3month` — for stable favourites that may fall below the recent-window threshold but are clearly part of the rotation.
+
+Notes:
+
+- last.fm read endpoints need only an API key; no OAuth flow. Keep the key in local config, never in the repo.
+- Pace requests politely; do not parallelise aggressively.
+- `user.getRecentTracks` may include a currently-playing track with a `nowplaying` attribute and no timestamp. **Skip it** — it will reappear as a normal scrobble.
+- Deduplicate by `mbid` when present, else by `(artistNorm, titleNorm)`.
+
+### 7.2 Stage 2 — Matching (LRCLIB)
+
+See §8 for the full algorithm. Output: `plainLyrics` string, or state `no_lyrics`.
+
+**Only `plainLyrics` is requested and stored.** `syncedLyrics` is explicitly discarded even when returned, per §1.2.
+
+### 7.3 Stage 3 — Language filter
+
+Run **after** lyric fetch, on the lyric text itself. Do not filter on last.fm artist tags — they are noisy and mishandle bilingual artists.
+
+- Library: `lingua-py` (preferred — better on short texts) or `fasttext`. Both local.
+- Restrict the candidate language set to `{es, en, pt, ca, gl, it, fr}` to sharpen discrimination.
+- Accept when `language == 'es' && confidence >= minLanguageConfidence`.
+- Spanglish tracks resolve naturally by confidence score. A track at 0.6 Spanish is genuinely mixed; surface it to the user as a manual-review item rather than auto-rejecting.
+
+### 7.4 Stage 4 — Teach-set build
+
+Inherited from `molcajete_prep.teachset.builder`, with **one Rocola-specific change**:
+
+> **Chorus deduplication.** Count word types against the set of *unique lines*, not raw token stream.
+
+Algorithm:
+
+1. Hash each line on its normalised, accent-folded, punctuation-stripped text.
+2. Build `uniqueLines` = first occurrence of each hash, in document order.
+3. Mark subsequent occurrences with `repeatOf` at the stanza level where a whole stanza repeats.
+4. Run frequency ranking and known-word filtering **over `uniqueLines` only**.
+
+**Why this matters.** A chorus sung five times inflates its vocabulary fivefold in the raw token stream. Without this, the builder teaches the hook and skips the verses — which is precisely backwards, since the hook is the part repetition will teach you for free.
+
+### 7.5 Stage 5 — Gloss and variety tagging
+
+Provider order: English Wiktionary → German Wiktionary → Ollama fallback.
+
+Wiktionary provides `glossEn` and often regional labels, but its labelling is inconsistent. **The Ollama provider is authoritative for `variety`, `register`, and `homeEquivalent`.** Run it for every sense, even when Wiktionary supplied a gloss, if the Wiktionary entry carries any regional label at all.
+
+Ollama response schema (strict JSON, no prose, no markdown fences):
+
+```json
+{
+  "lemma": "pibe",
+  "pos": "NOUN",
+  "glossDe": "Junge, Kerl",
+  "glossEn": "kid, guy",
+  "variety": "es-AR",
+  "register": "coloquial",
+  "homeEquivalent": "chavo",
+  "homeEquivalentNote": "In Mexiko sagt man 'chavo' oder 'morro' (Norden).",
+  "morphNote": null,
+  "confidence": 0.9
+}
 ```
-unknown(chapter) = lemmas(chapter) − knownLemmas(user)
+
+Prompt requirements:
+
+- State the home dialect explicitly in the system prompt.
+- Instruct: if the term is pan-Hispanic, `variety` **must** be `general` and `homeEquivalent` **must** be null. Over-tagging is the expected failure mode; guard against it.
+- Instruct: `homeEquivalent` is the term a speaker in the home dialect would actually use, or null if the home dialect uses the same word.
+- Require `glossDe` first — the model produces better German when it is not translating from its own English output.
+
+### 7.6 Stage 6 — Coverage diagnostic
+
+Unchanged mechanism, changed threshold. See §11.2.
+
+---
+
+## 8. The matcher
+
+The highest-risk component. last.fm scrobbles are user-submitted and inconsistent; LRCLIB's `/api/get` matches strictly.
+
+### 8.1 Normalisation
+
+Applied to both title and artist. **Preserve the original for display** — normalisation is for matching only.
+
+Ordered rules:
+
+1. Unicode NFKC, then lowercase.
+2. Strip trailing parenthetical and bracketed qualifiers matching a stop-list: `remaster(ed)?`, `\d{4} remaster`, `single version`, `album version`, `radio edit`, `live`, `demo`, `bonus track`, `deluxe`, `explicit`, `clean`, `mono`, `stereo`, `en vivo`, `versión .*`, `remix`.
+   - **Do not** strip parentheticals that are part of the actual title. Only strip when the parenthetical content matches the stop-list.
+3. Strip `feat.` / `ft.` / `con ` clauses from the **title**; retain the primary artist only in `artist`.
+4. Normalise dash variants (`–`, `—`, `‑`) to `-`, then strip trailing ` - <stop-list term>` suffixes.
+5. Collapse whitespace.
+6. Accent-fold for the comparison key **only** (`á→a`, `ñ→n`). Keep the accented form in `titleNorm` for display fallback; store a separate `titleKey` for fuzzy comparison.
+
+### 8.2 Lookup ladder
+
 ```
-`knownLemmas` is seeded from Anki (see §8) and grows as cards mature.
+1. GET /api/get
+     ?track_name=&artist_name=&album_name=&duration=
+   → exact match, all fields. Highest precision.
 
-### Step 2 — Classify each unknown lemma
+2. GET /api/get  (omit album, omit duration)
+   → many scrobbles carry no album; duration is often absent or wrong.
 
-| Condition | Action |
+3. GET /api/search?track_name=&artist_name=
+   → returns candidate list. Score each candidate:
+       titleKey similarity   (weight 0.5)  — token-set ratio
+       artistKey similarity  (weight 0.35)
+       duration proximity    (weight 0.15) — only if both known;
+                                             full credit within ±3s
+     Accept the top candidate at score ≥ 0.85.
+     Between 0.70 and 0.85 → queue for manual confirmation.
+     Below 0.70 → reject.
+
+4. GET /api/search?q=<artist + title>
+   → last resort, same scoring.
+
+5. → state = 'no_lyrics'
+```
+
+### 8.3 Caching
+
+- Cache **hits and misses** in local storage, keyed on `(artistKey, titleKey)`.
+- A miss is expensive to rediscover — do not re-run the full ladder on every pipeline pass.
+- **Re-check misses monthly.** LRCLIB is crowdsourced and grows; a track with no lyrics today may have them in six weeks.
+- Cache the resolved `lrclibId` and prefer `/api/get-by-id` on subsequent fetches.
+
+### 8.4 Client requirements
+
+- Send a `User-Agent` header identifying the application, name and version, per LRCLIB's request. It costs nothing and it is asked for.
+- Handle `instrumental: true` → state `no_lyrics`, do not retry.
+- Treat the API as best-effort. Missing fields are normal; never assume a field is present.
+
+### 8.5 Manual fallback
+
+The user can paste lyric text for any track, producing `source: 'manual'`. This is the escape hatch for regional and independent music with thin LRCLIB coverage, and it is the only path guaranteed to work for any track.
+
+---
+
+## 9. Dialect handling
+
+### 9.1 The problem being solved
+
+Molcajete could assume every gloss was Mexican. Rocola cannot. A pan-Hispanic rotation pulls in `vosotros` from Spanish rock, `voseo` from Argentine rock nacional, Caribbean vocabulary from Puerto Rican and Dominican tracks. Untagged, these enter the FSRS queue with the same weight as Monterrey vocabulary — and the user produces the wrong regional term in a Monterrey family setting.
+
+**Rocola must let the user read anything while only reinforcing what they need to produce.**
+
+### 9.2 Card back rendering
+
+Given `homeDialect = 'es-MX'`:
+
+| Sense variety | Rendering |
 |---|---|
-| `bookCount >= 3` | **Teach** — you will meet it repeatedly, a card pays for itself |
-| `zipf >= 3.5` (roughly top 5000 words) | **Teach** — high general utility |
-| `mexicanism == true` and `bookCount >= 2` | **Teach** — this is why you're here |
-| Proper noun (`p == "PROPN"`) | **Skip entirely** — no card, no gloss needed |
-| Everything else | **Gloss only** — tap-to-reveal inline, no card |
+| `general` | German gloss / English gloss. No marker. |
+| `es-MX` (= home) | German gloss / English gloss. No marker. |
+| Any other | German gloss / English gloss · **variety badge** · `MX: <homeEquivalent>` when present |
 
-### Step 3 — Cap and split
-- Hard cap: **18 new cards per teaching session**
-- If `teachSet(chapter) > 18`, split the chapter into 2+ reading segments with their own sessions
-- Sort the teach set by `bookCount` descending — most useful words first, so a partial session still helps
+Example card back for `pibe`:
 
-### Step 4 — Coverage gate (optional, configurable)
-Before unlocking a chapter, compute projected coverage:
 ```
-coverage = (tokens whose lemma ∈ known ∪ justTaught) / totalTokens
-```
-Default target: **0.98**. If below target after the teach set, warn but allow entry — never hard-block. This is a personal tool; you are an adult.
-
----
-
-## 6. Screen flow
-
-Five screens. That's the whole app.
-
-### 6.1 Library
-Grid of imported books. Each shows: cover colour block, title, `Chapter 4 of 12`, and a small progress ring. Primary action button: **Import book** (file picker, accepts `.molcajete.json`).
-
-Empty state doubles as the Anki-seed prompt.
-
-### 6.2 Chapter list
-Vertical list of chapters. Each row: title, token count, and a status chip:
-- `Ready to learn` — teach set computed, not yet studied
-- `18 cards to learn` — session pending
-- `Read` — completed
-- `Due: 12` — review cards from this chapter are due
-
-Tapping a locked chapter opens the teaching session; tapping an unlocked one opens the reader.
-
-### 6.3 Teaching session
-One card at a time, full screen.
-
-**Introduction phase** (first exposure to a card):
-```
-        madriguera
-        ─────────────
-        DE   der Bau, die Höhle
-        EN   burrow, den
-        
-        „Mi papá dice que somos
-         gente de la madriguera."
-        
-        [ Ich kenne das ]  [ Weiter ]
-```
-"Ich kenne das" marks it known immediately and removes it from the session — this is essential, it's how you burn through the 40% of words you already have.
-
-**Recall phase** (after all introductions):
-Spanish front → tap to reveal → four FSRS buttons (`Nochmal / Schwer / Gut / Leicht`).
-
-Session ends when every card in the teach set has been answered `Gut` or better once. Typical duration: 6–10 minutes.
-
-### 6.4 Reader
-Serif type, generous line height, warm off-white background, no chrome except a thin progress bar. Paragraph-level rendering from the token array.
-
-- Words in `glossOnly` for this chapter: subtle dotted underline
-- Tap any word → bottom sheet with lemma, DE, EN, and `Add card` button
-- Long-press → select phrase, no translation, just a note-to-self bookmark
-- End of chapter → `Chapter complete` → returns to chapter list, unlocks next
-
-### 6.5 Review
-Daily due cards across all books. Same FSRS interface as the recall phase. This screen is what makes it a real SRS rather than a cramming tool.
-
----
-
-## 7. Spaced repetition
-
-Use **FSRS** via the `ts-fsrs` npm package. Do not write your own scheduler.
-
-- Card states: `New → Learning → Review → Relearning`
-- Store the full FSRS card object (`due`, `stability`, `difficulty`, `elapsed_days`, `scheduled_days`, `reps`, `lapses`, `state`, `last_review`)
-- A lemma is considered **known** when `state == Review && stability > 21` days, or when manually marked via "Ich kenne das"
-- Retention target: 0.90 (the FSRS default)
-
-**Card direction:** ES → DE/EN only (recognition). Reading is a recognition task; production cards double your workload for no reading benefit. Keep production practice in your existing Anki decks.
-
----
-
-## 8. Anki seeding
-
-Without this, chapter one tries to teach you *correr*, *ganas* and *chido* and the app feels stupid.
-
-1. In Anki: `File → Export → Notes in Plain Text (.txt)`, include your `Spanisch::` decks
-2. Prep script `seed_known.py` reads the file, takes the Spanish field, lemmatizes each entry with spaCy, emits `known.json` — a flat array of lemma strings
-3. App imports `known.json` on first launch; those lemmas are pre-marked known and never enter a teach set
-
-Re-runnable at any time; merges rather than replaces.
-
----
-
-## 9. Tech stack
-
-### Prep pipeline (Python 3.11+)
-| Concern | Library |
-|---|---|
-| EPUB parsing | `ebooklib` + `BeautifulSoup` |
-| Tokenize + lemmatize | `spaCy` with `es_core_news_sm` |
-| Frequency data | `wordfreq` (`zipf_frequency(word, 'es')`) |
-| DE/EN glosses | Wiktionary extracts from kaikki.org (`kaikki.org/dictionary/Spanish`) |
-| Gloss fallback + Mexican flagging | Claude API, batched (see §11) |
-
-### Reader PWA
-| Concern | Choice |
-|---|---|
-| Framework | React 18 + TypeScript + Vite |
-| Storage | IndexedDB via `Dexie.js` |
-| Offline shell | `vite-plugin-pwa` (Workbox) |
-| SRS | `ts-fsrs` |
-| Styling | Tailwind |
-| Install | Safari → Share → Add to Home Screen |
-
-### Hosting
-GitHub Pages or Netlify free tier. The PWA is static files; it needs a URL once, to install. After that it runs from the home screen offline.
-
----
-
-## 10. Designing now for a native rewrite later
-
-You asked to keep the native door open. Four rules make that migration cheap rather than a rewrite:
-
-1. **Keep the bundle format app-agnostic.** It is plain JSON with no web assumptions. A Swift decoder is an afternoon's work.
-2. **Isolate domain logic in pure TypeScript.** Put `selectTeachSet()`, `computeCoverage()`, `scheduleCard()` in `src/domain/` with zero React and zero DOM imports. These are the algorithms worth preserving; they port to Swift almost line-by-line.
-3. **Put all storage behind one interface.** Define `BookRepository` and `CardRepository` as TypeScript interfaces, with a Dexie implementation behind them. In Swift the same interfaces get a SwiftData implementation.
-4. **Never let view code compute anything.** Components receive fully-prepared view models. This keeps the porting surface to "rebuild the screens", which is exactly the part you'd *want* to rebuild natively.
-
-If you follow these, the native version reuses the prep pipeline entirely, translates ~600 lines of domain logic, and rebuilds five screens in SwiftUI.
-
----
-
-## 11. Which Claude model and settings to use
-
-Two distinct uses. Don't conflate them.
-
-### 11.1 Building the app
-
-**Tool: Claude Code**, not the chat interface. This is a multi-file project with a build step; an agentic coding tool that reads and writes your repo directly is a different category of useful.
-
-**Model: Claude Opus 5** (`claude-opus-5`). The official docs recommend starting with Opus 5 for complex agentic coding. It has a 1M-token context window and a May 2026 knowledge cutoff — the most recent of any current model, which matters for library APIs.
-
-**Settings:**
-- The `effort` parameter defaults to `high` on Opus 5 in both the Claude API and Claude Code. Leave it there for architecture and initial scaffolding; drop it for mechanical edits.
-- Drop to **Claude Sonnet 5** (`claude-sonnet-5`) for iteration once the architecture is settled — same 1M context, roughly half the cost, faster.
-
-**Working method that suits "spec it and have it generated":**
-1. Put this document in the repo as `SPEC.md`
-2. Add a `CLAUDE.md` with the four native-migration rules from §10 as hard constraints
-3. Build in the phase order from §12, one phase per session, committing between
-4. Ask for tests on `src/domain/` — that's the code you'll port later, so it's the code worth pinning down
-
-### 11.2 Inside the prep pipeline
-
-Only if Wiktionary coverage disappoints. Use it for two jobs: filling gloss gaps, and flagging Mexican regional usage.
-
-- **Model: Claude Sonnet 5** — glossing is not a hard reasoning task, and you'll send thousands of lemmas
-- **Use the Message Batches API** — 50% discount, and you have no latency requirement on a script you run once per book
-- **Use prompt caching** — the system prompt and instructions are identical across every call
-- Consider **Claude Haiku 4.5** (`claude-haiku-4-5`) if volume gets large and quality holds; test on 200 lemmas first
-
-### 11.3 Current model reference (August 2026)
-
-| Model | API ID | Price /MTok in-out | Context |
-|---|---|---|---|
-| Claude Fable 5 | `claude-fable-5` | $10 / $50 | 1M |
-| Claude Opus 5 | `claude-opus-5` | $5 / $25 | 1M |
-| Claude Sonnet 5 | `claude-sonnet-5` | $2 / $10 | 1M |
-| Claude Haiku 4.5 | `claude-haiku-4-5` | $1 / $5 | 200k |
-
-Fable 5 is overkill here — it's built for long-running agentic work, and this project doesn't need it.
-
-Verify before you budget: https://platform.claude.com/docs/en/about-claude/pricing
-
----
-
-## 12. Build phases
-
-Each phase should end with something you can actually use.
-
-**Phase 1 — Prep pipeline skeleton**
-EPUB → chapters → tokens → lemmas → JSON, with frequency from `wordfreq` and no glosses yet. Success: a valid bundle for one book.
-
-**Phase 2 — Glosses**
-Wire in Wiktionary extracts, DE and EN. Add Claude batch fallback. Success: >95% of teach-set lemmas have a German gloss.
-
-**Phase 3 — Reader shell**
-React app, import a bundle, render chapters, tap-to-gloss. No SRS yet. Success: you read chapter one on your iPad, offline.
-
-**Phase 4 — Teaching loop**
-Teach-set selection, introduction phase, FSRS recall phase, chapter gating. Success: you learn 18 words then read the chapter and notice the difference.
-
-**Phase 5 — Anki seed + review screen**
-Import `known.json`, add cross-book daily review. Success: the app stops teaching you words you already know.
-
-**Phase 6 — Polish**
-Coverage display, reading statistics, export mined words back to Anki as TSV.
-
----
-
-## 13. Settled decisions
-
-1. **Glosses: German primary, English secondary.** Both are stored in the lexicon. German renders large; English renders small beneath it. English comes free with the kaikki.org extract (which derives from English Wiktionary), so storing it costs nothing; German is produced by the Claude batch pass either way. English earns its place as a disambiguator when the German gloss is too broad.
-
-2. **Coverage is a diagnostic, never a gate.** Compute and display it; warn below 0.90; always allow entry. Its real job is to tell you whether the *book* is right for your level, not whether the chapter is ready. If a chapter needs five sessions to clear 90%, switch books — that signal is worth more than a lock screen.
-
-3. **No inline translation in the reader.** Every gloss is tap-to-reveal. Build one exception: a **"reveal all glosses"** toggle intended for a second pass through an already-read chapter. It must be off by default and must not persist across chapters.
-
-4. **First text: `Los de abajo` by Mariano Azuela (1915, public domain).** Available from Project Gutenberg, genuinely Mexican, and dense with revolutionary-era regional vocabulary — it stress-tests the `mexicanism` flagging immediately. Use it for all pipeline development. `Fiesta en la madriguera` becomes the first real read once a DRM-free EPUB is in hand.
-
-### Note on source files
-
-The pipeline accepts **DRM-free EPUB only**. It must not contain, reference, or attempt any DRM circumvention — that is legally fraught under §95a UrhG in Germany and is out of scope for this project. Where a book is unavailable DRM-free, the answer is to read it on paper, not to work around the protection.
-
----
-
-## Appendix A — Prep script pseudocode
-
-```python
-def build_bundle(epub_path, known_lemmas, out_path):
-    chapters_html = extract_chapters(epub_path)          # ebooklib
-    nlp = spacy.load("es_core_news_sm")
-
-    lexicon, chapters = {}, []
-
-    for idx, html in enumerate(chapters_html):
-        text = clean(html)                                # strip markup, keep ¶ breaks
-        doc = nlp(text)
-
-        paragraphs, chapter_lemmas = [], Counter()
-        for para in split_paragraphs(doc):
-            tokens = []
-            for tok in para:
-                if tok.is_space:
-                    tokens.append({"s": tok.text, "ws": True})
-                    continue
-                lemma = tok.lemma_.lower()
-                key = lemma_key(lemma, tok.pos_)
-                tokens.append({"s": tok.text, "l": lemma,
-                               "p": tok.pos_, "t": key})
-                if tok.is_alpha and tok.pos_ != "PUNCT":
-                    chapter_lemmas[key] += 1
-                    lexicon.setdefault(key, new_entry(lemma, tok.pos_))
-            paragraphs.append({"id": f"c{idx}p{len(paragraphs)}",
-                               "tokens": tokens})
-
-        chapters.append({"index": idx, "paragraphs": paragraphs,
-                         "_counts": chapter_lemmas})
-
-    # Global pass — needs the whole book
-    for key, entry in lexicon.items():
-        entry["bookCount"] = sum(c["_counts"][key] for c in chapters)
-        entry["zipf"] = wordfreq.zipf_frequency(entry["lemma"], "es")
-        entry["de"], entry["en"], entry["mexicanism"] = lookup(entry["lemma"])
-        entry["example"] = first_sentence_containing(key, chapters)
-
-    fill_gaps_with_claude(lexicon)                        # batch API
-
-    for chap in chapters:
-        teach, gloss = classify(chap["_counts"], lexicon, known_lemmas)
-        chap["teachSet"], chap["glossOnly"] = teach, gloss
-        del chap["_counts"]
-
-    write_json(out_path, schemaVersion=1,
-               book=metadata(epub_path), chapters=chapters, lexicon=lexicon)
+Junge, Kerl
+kid, guy
+🇦🇷 AR · coloquial
+MX: chavo, morro
 ```
 
+The badge is visually subordinate to the gloss — it is context, not the answer.
+
+### 9.3 Recognition-only morphology
+
+Verb forms from `voseo` (`sos`, `tenés`, `querés`, `vení`) and `vosotros` (`sois`, `tenéis`, `venid`) must be **recognisable but never drilled for production**.
+
+- Tag these senses with `morphNote` explaining the form and giving the home-dialect equivalent.
+- Mark the card as **recognition-only**: the card is shown Spanish-front only. Never generate a German-front → Spanish-back card for a non-home-dialect form.
+- This flag lives on the card, not the sense, and is set at card-generation time from `variety`.
+
+### 9.4 A note on `wordfreq`
+
+`wordfreq`'s `es` corpus is pan-Hispanic. Under Molcajete this was a mild compromise. Under Rocola it is correct — no change needed, but do not "fix" it later by filtering to Mexican sources.
+
 ---
 
-## Appendix B — Domain function signatures to implement first
+## 10. Reader
 
-```typescript
-// src/domain/teachSet.ts — pure, tested, portable to Swift
-export function selectTeachSet(
-  chapterCounts: Map<LemmaKey, number>,
-  lexicon: Lexicon,
-  known: Set<LemmaKey>,
-  opts: { maxCards: number; zipfThreshold: number }
-): { teach: LemmaKey[]; glossOnly: LemmaKey[] };
+### 10.1 Layout
 
-export function computeCoverage(
-  chapter: Chapter,
-  known: Set<LemmaKey>
-): number;
+Stanza-aware. Blank-line-separated blocks, generous vertical rhythm, line breaks preserved exactly as fetched. Lyrics are not prose and must not be reflowed into paragraphs.
 
-export function splitChapterIfNeeded(
-  chapter: Chapter,
-  teachSet: LemmaKey[],
-  maxCards: number
-): ReadingSegment[];
-```
+Repeated stanzas (`repeatOf` set) render normally but are visually de-emphasised — a subtle left rule or reduced opacity — signalling "you have seen this".
 
-These three functions are the app. Everything else is presentation.
+### 10.2 Interaction
+
+Inherited unchanged: **tap-to-reveal only**, plus a "reveal all glosses" toggle for second passes.
+
+Tapping a token with a `senseId` reveals an inline gloss chip below the line. Elided tokens (`isElided`) additionally show the written form: `pa'` → `para`.
+
+### 10.3 Line notes
+
+New surface. A stanza or line may carry a `LineNote` for content that is not a vocabulary item — idiom, double meaning, cultural reference, historical allusion.
+
+- Rendered as a discreet marginal marker, expanded on tap.
+- v1: **manually authored only.** Do not auto-generate these. An LLM-generated cultural note that is confidently wrong is worse than no note.
+- The `Genius` annotation API is a legitimate future source (it exposes annotations, not lyric text) — noted for v2, not built now.
+
+### 10.4 Streaming deep link
+
+Store `spotifyTrackId` where the scrobble supplies it. Render a single "escuchar" link that opens the track in the user's streaming app.
+
+No embedded player, no SDK, no OAuth beyond what selection already requires. Zero integration cost; lets the user play the song in whatever app they are already using while reading.
+
+---
+
+## 11. Sessions and progression
+
+### 11.1 One song, one session
+
+A song's teach set is 12–20 lemmas. The 18-card cap is retained but will rarely bind. If a track exceeds 18 unknown lemmas, **do not split the song** — instead surface it as "dense" and let the user choose to study it across two sessions or skip it. Splitting a song mid-verse is incoherent in a way that splitting a chapter is not.
+
+### 11.2 Coverage threshold
+
+**Default `coverageWarnThreshold` = 0.95**, up from Molcajete's 0.90.
+
+Rationale: 0.90 was calibrated on prose, where surrounding context carries the reader through unknown words. Songs are far more elliptical — sparse syntax, ellipsis, deliberate ambiguity. 0.90 coverage in a song feels materially worse than 0.90 in a chapter.
+
+This remains a **diagnostic with a soft warning, never a gate.** Revisit after roughly a dozen songs and tune against felt experience.
+
+---
+
+## 12. Legal and storage posture
+
+Mirrors the Molcajete "DRM-free EPUB only" rule.
+
+> **Rocola never bundles, ships, or redistributes lyric text.** Lyrics are fetched at runtime from LRCLIB or supplied by the user, and stored only in local user storage on the user's own device.
+
+Consequences, binding on implementation:
+
+- No lyric text in the repository, in fixtures, in test data, or in this or any other spec document. **Tests use synthetic Spanish text.**
+- No server-side lyric cache. No sync of lyric content between devices.
+- No export path that emits lyric text in bulk.
+- Anki export contains **vocabulary cards only** — lemma, glosses, variety, register. A single illustrative line of context per card is acceptable; whole stanzas are not.
+
+---
+
+## 13. Anki export
+
+Retains the established conventions.
+
+- Deck: `Spanisch::Rocola::[Artist]`
+- Tags: shared category tag `rocola` plus a per-track tag
+- Note type: `Basic`, HTML formatting on the back
+- Back layout: German gloss, English gloss, variety badge, home equivalent, one context line
+- Format: tab-separated `.txt` with header directives (the reliable path from the claude.ai web interface); AnkiConnect via `addNotes` when running locally from Claude Desktop or Claude Code
+- **Create the deck before calling `addNotes`** — adding to a non-existent deck fails silently
+
+---
+
+## 14. Build phases
+
+**Phase 0 — Extraction.** Pull `molcajete-prep` out as a shared package. Move the existing tests. Repoint Molcajete at the pinned version. Confirm all 333 tests still pass. *Nothing else starts until this is green.*
+
+**Phase 1 — Coverage probe.** Before building anything: pull ~50 Spanish tracks from real last.fm history, run them through the normaliser and the lookup ladder, and count hits. This number determines whether the LRCLIB path is viable or whether manual paste is the primary route. **It is cheap and it changes the plan.**
+
+**Phase 2 — Pipeline.** last.fm client → matcher → language filter → teach-set builder → gloss + variety tagging. CLI only, no UI. Output: JSON per track, plus the Anki `.txt`.
+
+**Phase 3 — App.** Fork the PWA. Strip EPUB and chapter splitting. Build the stanza reader and the variety-aware card back. Wire FSRS.
+
+**Phase 4 — Polish.** Line notes, manual paste UI, dense-track handling, deep links.
+
+---
+
+## 15. Open questions
+
+1. **Coverage probe result.** Unknown until Phase 1. If LRCLIB hit rate on the real rotation is below ~50%, manual paste becomes the primary path and the matcher's priority drops sharply.
+2. **Ollama over-tagging.** Expect the model to mark pan-Hispanic words as regional. Needs a held-out eval set of ~100 known-general lemmas to measure the false-positive rate before trusting `variety` in production.
+3. **Cross-track sense identity.** When `corazón` appears in ten songs, it is one sense and one card. Molcajete's sense-keying is per-lemma-per-POS and should carry over — but confirm it does not silently key on document ID.
+4. **Home-dialect switching.** Config allows it, but the `homeEquivalent` fields are generated against one home dialect at gloss time. Switching later requires a re-gloss pass. Acceptable for v1; document the limitation.
+5. **Multi-artist tracks.** Collaborations scrobble inconsistently. The `feat.` stripping in §8.1 handles the common case; genuinely co-billed tracks (`A & B`) may need a fallback that tries each artist separately.
