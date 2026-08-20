@@ -25,7 +25,7 @@
  * "the" lines; see `coverage.ts`.
  */
 
-import type { Lexicon, LemmaKey, Token, TrackId, Variety } from './types'
+import type { Lexicon, LemmaKey, Token, TrackId, Variety } from '../types'
 
 /** SPEC §6.2's `Line`, plus the repeat marker the unique-line view needs. */
 export interface Line {
