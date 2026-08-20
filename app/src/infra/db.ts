@@ -14,7 +14,7 @@
  *
  * ## What is stored
  *
- *   sessions      one row per teaching session in progress
+ *   sessions      one row per teaching session in progress, keyed by track
  *   cards         FSRS state, one row per lemma
  *   knownLemmas   "Ich kenne das", one row per lemma
  *
@@ -42,8 +42,7 @@ import type { TeachingSession } from '../domain/session/session'
 import type { SrsCard } from '../domain/srs/scheduler'
 
 export interface SessionRow {
-  bookId: string
-  chapterIndex: number
+  trackId: string
   session: TeachingSession
 }
 
@@ -60,7 +59,7 @@ export interface KnownLemmaRow {
 }
 
 export class RocolaDatabase extends Dexie {
-  sessions!: Table<SessionRow, [string, number]>
+  sessions!: Table<SessionRow, string>
   cards!: Table<CardRow, string>
   knownLemmas!: Table<KnownLemmaRow, string>
 
@@ -72,7 +71,7 @@ export class RocolaDatabase extends Dexie {
     // requires the whole card object be stored, never a copy of one field
     // beside it, because partial state cannot be rescheduled.
     this.version(1).stores({
-      sessions: '[bookId+chapterIndex], bookId',
+      sessions: 'trackId',
       cards: 'lemmaId, card.fsrs.due',
       knownLemmas: 'lemmaId',
     })

@@ -52,13 +52,18 @@ export function CardFront({ view }: { view: SessionCardView }) {
         </span>
       </div>
 
-      {view.regionNote && (
+      {/* Deliberately plain. SPEC §9.2's layout — the flag, the badge
+          subordinate to the gloss, the "MX: …" line — is the next prompt's
+          job; this only proves the data reaches the component. */}
+      {(view.badge || view.register !== 'neutral') && (
         <p
           className={`mt-2 text-center text-xs ${
-            view.mexicanism ? 'text-accent' : 'text-ink-faint'
+            view.badge ? 'text-accent' : 'text-ink-faint'
           }`}
         >
-          {view.regionNote}
+          {[view.badge, view.register !== 'neutral' ? view.register : null]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
       )}
     </div>

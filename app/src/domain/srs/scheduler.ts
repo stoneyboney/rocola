@@ -33,6 +33,7 @@ import {
   type Grade,
 } from 'ts-fsrs'
 import type { LemmaId } from '../lemma'
+import type { Register, Variety } from '../types'
 
 /**
  * The four buttons of the recall phase, as the rest of the app names them.
@@ -74,8 +75,18 @@ export interface CardFace {
   de: string | null
   en: string | null
   example: string | null
-  regionNote: string | null
-  mexicanism: boolean
+  // -- SPEC §6.3, copied on at creation like everything else here ------
+  //
+  // The badge is stored, not the variety alone, because it is a judgement
+  // about the *reader* as much as the word: §9.2 shows no badge for the home
+  // dialect, and the home dialect can change. Resolving it at review time
+  // would need the track, and the whole point of a face is that a card whose
+  // song has been deleted still renders.
+  variety: Variety
+  register: Register
+  badge: string | null
+  homeEquivalent: string | null
+  morphNote: string | null
 }
 
 /**

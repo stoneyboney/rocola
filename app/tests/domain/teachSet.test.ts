@@ -10,16 +10,16 @@ import {
   type TeachSetOptions,
 } from '../../src/domain/teachSet'
 import type { LemmaKey, LexiconEntry } from '../../src/domain/types'
-import { LEXICON, lexiconMap, paragraphs } from '../fixture'
+import { LEXICON, lexiconMap, lines } from '../fixture'
 
 function entry(over: Partial<LexiconEntry> = {}): LexiconEntry {
   return {
     lemma: 'madriguera',
     pos: 'NOUN',
     zipf: 2.9,
-    bookCount: 14,
-    firstChapter: 0,
-    mexicanism: false,
+    uniqueLineCount: 14,
+    variety: 'general',
+    register: 'neutral',
     ...over,
   }
 }
@@ -39,11 +39,11 @@ function select(
 }
 
 describe('the SPEC §5 rules, one at a time', () => {
-  const base = { zipf: 0, bookCount: 0, mexicanism: false }
+  const base = { zipf: 0, uniqueLineCount: 0, variety: 'general' as const }
 
   it('teaches a word met three times — a card pays for itself', () => {
-    expect(isTeachable(entry({ ...base, bookCount: 3 }), options())).toBe(true)
-    expect(isTeachable(entry({ ...base, bookCount: 2 }), options())).toBe(false)
+    expect(isTeachable(entry({ ...base, uniqueLineCount: 3 }), options())).toBe(true)
+    expect(isTeachable(entry({ ...base, uniqueLineCount: 2 }), options())).toBe(false)
   })
 
   it('teaches a common word on zipf alone', () => {
@@ -51,16 +51,16 @@ describe('the SPEC §5 rules, one at a time', () => {
     expect(isTeachable(entry({ ...base, zipf: 3.49 }), options())).toBe(false)
   })
 
-  it('teaches a mexicanism on two occurrences — this is why you are here', () => {
-    const mex = { ...base, mexicanism: true }
-    expect(isTeachable(entry({ ...mex, bookCount: 2 }), options())).toBe(true)
-    expect(isTeachable(entry({ ...mex, bookCount: 1 }), options())).toBe(false)
+  it('teaches a regionalism on two occurrences — this is why you are here', () => {
+    const mex = { ...base, variety: 'es-MX' as const }
+    expect(isTeachable(entry({ ...mex, uniqueLineCount: 2 }), options())).toBe(true)
+    expect(isTeachable(entry({ ...mex, uniqueLineCount: 1 }), options())).toBe(false)
     // Without the flag, two occurrences are not enough.
-    expect(isTeachable(entry({ ...base, bookCount: 2 }), options())).toBe(false)
+    expect(isTeachable(entry({ ...base, uniqueLineCount: 2 }), options())).toBe(false)
   })
 
   it('glosses everything else', () => {
-    const { teach, glossOnly } = select({ m1: entry({ ...base, bookCount: 1 }) })
+    const { teach, glossOnly } = select({ m1: entry({ ...base, uniqueLineCount: 1 }) })
     expect(teach).toEqual([])
     expect(glossOnly).toEqual(['m1'])
   })
@@ -70,13 +70,13 @@ describe('proper nouns', () => {
   it('are skipped before the teach rules, not after', () => {
     // Read §5's table top-down and Demetrio — hundreds of occurrences, so
     // bookCount >= 3 fires first — earns a card. CLAUDE.md says otherwise.
-    const demetrio = entry({ lemma: 'demetrio', pos: 'PROPN', bookCount: 400 })
+    const demetrio = entry({ lemma: 'demetrio', pos: 'PROPN', uniqueLineCount: 400 })
     expect(isTeachable(demetrio, options())).toBe(false)
   })
 
   it('get no card and no gloss either', () => {
     const { teach, glossOnly } = select({
-      m1: entry({ lemma: 'demetrio', pos: 'PROPN', bookCount: 400 }),
+      m1: entry({ lemma: 'demetrio', pos: 'PROPN', uniqueLineCount: 400 }),
     })
     expect(teach).toEqual([])
     expect(glossOnly).toEqual([])
@@ -97,13 +97,13 @@ describe('closed-class parts of speech', () => {
   ]
 
   it.each(functionWords)('never teaches %s (%s)', (lemma, pos) => {
-    const word = entry({ lemma, pos, zipf: 7.4, bookCount: 8691 })
+    const word = entry({ lemma, pos, zipf: 7.4, uniqueLineCount: 8691 })
     expect(isTeachable(word, options())).toBe(false)
   })
 
   it('still glosses them — the reader is unchanged', () => {
     const { teach, glossOnly } = select({
-      m1: entry({ lemma: 'el', pos: 'DET', zipf: 7.45, bookCount: 8691 }),
+      m1: entry({ lemma: 'el', pos: 'DET', zipf: 7.45, uniqueLineCount: 8691 }),
     })
     expect(teach).toEqual([])
     expect(glossOnly).toEqual(['m1'])
@@ -111,7 +111,7 @@ describe('closed-class parts of speech', () => {
 
   it('keeps interjections teachable — ¡órale! is the point of the app', () => {
     expect(CLOSED_CLASS_POS.has('INTJ')).toBe(false)
-    const orale = entry({ lemma: 'órale', pos: 'INTJ', bookCount: 4 })
+    const orale = entry({ lemma: 'órale', pos: 'INTJ', uniqueLineCount: 4 })
     expect(isTeachable(orale, options())).toBe(true)
   })
 })
@@ -119,17 +119,17 @@ describe('closed-class parts of speech', () => {
 describe('ordering', () => {
   it('puts the most useful words first, so a partial session still helps', () => {
     const { teach } = select({
-      m1: entry({ lemma: 'raro', bookCount: 3 }),
-      m2: entry({ lemma: 'casa', bookCount: 90 }),
-      m3: entry({ lemma: 'perro', bookCount: 12 }),
+      m1: entry({ lemma: 'raro', uniqueLineCount: 3 }),
+      m2: entry({ lemma: 'casa', uniqueLineCount: 90 }),
+      m3: entry({ lemma: 'perro', uniqueLineCount: 12 }),
     })
     expect(teach).toEqual(['m2', 'm3', 'm1'])
   })
 
   it('breaks ties on the key, so two runs agree', () => {
     const { teach } = select({
-      m9: entry({ lemma: 'nueve', bookCount: 5 }),
-      m1: entry({ lemma: 'eins', bookCount: 5 }),
+      m9: entry({ lemma: 'nueve', uniqueLineCount: 5 }),
+      m1: entry({ lemma: 'eins', uniqueLineCount: 5 }),
     })
     expect(teach).toEqual(['m1', 'm9'])
   })
@@ -150,8 +150,8 @@ describe('what you already know', () => {
     // different keys. Learning the word settles both.
     const { teach } = select(
       {
-        m3589: entry({ lemma: 'estar', pos: 'VERB', bookCount: 76 }),
-        m3590: entry({ lemma: 'Estar ', pos: 'VERB', bookCount: 76 }),
+        m3589: entry({ lemma: 'estar', pos: 'VERB', uniqueLineCount: 76 }),
+        m3590: entry({ lemma: 'Estar ', pos: 'VERB', uniqueLineCount: 76 }),
       },
       ['estar'],
     )
@@ -195,7 +195,7 @@ describe('against the synthetic fixture', () => {
   const lexicon = lexiconMap()
 
   function recompute(known: string[] = []) {
-    const vocabulary = countVocabulary(paragraphs())
+    const vocabulary = countVocabulary(lines())
     return selectTeachSet(vocabulary.counts, lexicon, new Set(known), options())
   }
 
@@ -232,7 +232,7 @@ describe('against the synthetic fixture', () => {
   })
 
   it('teaches no proper noun, because a name has no lexicon key at all', () => {
-    const vocabulary = countVocabulary(paragraphs())
+    const vocabulary = countVocabulary(lines())
     expect(vocabulary.propnTokens).toBe(1)
     for (const key of recompute().teach) {
       expect(lexicon.get(key)!.pos).not.toBe('PROPN')

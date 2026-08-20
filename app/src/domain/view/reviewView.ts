@@ -40,8 +40,11 @@ function faceOf(card: SrsCard): CardFace {
       de: null,
       en: null,
       example: null,
-      regionNote: null,
-      mexicanism: false,
+      variety: 'general',
+      register: 'neutral',
+      badge: null,
+      homeEquivalent: null,
+      morphNote: null,
     }
   )
 }
@@ -55,8 +58,12 @@ export function buildReviewCardView(card: SrsCard): SessionCardView {
     de: face.de,
     en: face.en,
     example: face.example,
-    regionNote: face.regionNote,
-    mexicanism: face.mexicanism,
+    variety: face.variety,
+    register: face.register,
+    // Read off the face, never recomputed from a track: the track may be gone.
+    badge: face.badge,
+    homeEquivalent: face.homeEquivalent,
+    morphNote: face.morphNote,
   }
 }
 

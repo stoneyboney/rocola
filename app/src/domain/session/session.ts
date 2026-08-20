@@ -4,11 +4,11 @@
  * ## Two phases
  *
  * **Introduction** shows every card once, front and back together — Spanish
- * word, German gloss, English beneath it, and the sentence from this book that
+ * word, German gloss, English beneath it, and the line from this song that
  * the gloss was disambiguated against. Two actions: `Weiter`, and `Ich kenne
  * das`, which SPEC calls essential because it is how you burn through the 40%
  * of words you already have. It marks the lemma known immediately and globally:
- * out of this session, and out of every future teach set in every book.
+ * out of this session, and out of every future teach set in every song.
  *
  * **Recall** puts the Spanish front alone, waits for a tap, then takes one of
  * four FSRS grades. The session ends when every remaining card has been
@@ -50,7 +50,7 @@ import {
   type ReviewGrade,
   type SrsCard,
 } from '../srs/scheduler'
-import type { BookId, LemmaKey } from '../types'
+import type { LemmaKey, TrackId } from '../types'
 
 export type SessionPhase = 'introduction' | 'recall' | 'complete'
 
@@ -70,8 +70,7 @@ export interface SessionCard {
 }
 
 export interface TeachingSession {
-  bookId: BookId
-  chapterIndex: number
+  trackId: TrackId
   phase: SessionPhase
   /**
    * Introduction order first, then the recall queue, consumed from the front.
@@ -108,15 +107,13 @@ export interface SessionCardInput {
 }
 
 export function startSession(
-  bookId: BookId,
-  chapterIndex: number,
+  trackId: TrackId,
   cards: readonly SessionCardInput[],
   now: Date,
 ): TeachingSession {
   const queue = cards.map((card) => ({ ...card, introduced: false }))
   return {
-    bookId,
-    chapterIndex,
+    trackId,
     // A session with nothing to teach is already over. Saying so here means no
     // screen has to special-case an empty queue.
     phase: queue.length === 0 ? 'complete' : 'introduction',
@@ -151,7 +148,7 @@ export function introduce(
         dismissed: [...session.dismissed, card.key],
       }, now),
       // Immediately and globally. This is the lemma leaving every future teach
-      // set in every book, not just this session.
+      // set in every song, not just this session.
       effects: [{ kind: 'markKnown', lemmaId: card.lemmaId }],
     }
   }
@@ -176,7 +173,7 @@ export function grade(
     return { session, effects: [] }
   }
 
-  // A word can already have a card from an earlier session in another chapter
+  // A word can already have a card from an earlier session on another song
   // — the schedule continues rather than restarting.
   const before = existing ?? newCard(card.lemmaId, now, card.face)
   const after = gradeCard(before, reviewGrade, now)

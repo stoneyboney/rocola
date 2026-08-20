@@ -18,12 +18,12 @@ function entry(over: Partial<LexiconEntry> = {}): LexiconEntry {
     lemma: 'jacal',
     pos: 'NOUN',
     zipf: 2.1,
-    bookCount: 3,
-    firstChapter: 0,
-    mexicanism: true,
+    uniqueLineCount: 3,
+    variety: 'es-MX',
+    register: 'coloquial',
     de: 'Hütte',
     en: 'hut, shack',
-    regionNote: 'MX, ländlich',
+    homeEquivalent: 'chavo',
     example: { es: 'La puerta del jacal estaba abierta.' },
     ...over,
   }
@@ -46,8 +46,8 @@ describe('buildSessionCardView', () => {
     expect(view.de).toBe('Hütte')
     expect(view.en).toBe('hut, shack')
     expect(view.example).toBe('La puerta del jacal estaba abierta.')
-    expect(view.regionNote).toBe('MX, ländlich')
-    expect(view.mexicanism).toBe(true)
+    expect(view.variety).toBe('es-MX')
+    expect(view.register).toBe('coloquial')
   })
 
   it('reports a missing German gloss as null rather than an empty string', () => {
@@ -57,9 +57,9 @@ describe('buildSessionCardView', () => {
       lemma: 'cenir',
       pos: 'VERB',
       zipf: 0,
-      bookCount: 3,
-      firstChapter: 0,
-      mexicanism: false,
+      uniqueLineCount: 3,
+      variety: 'general',
+      register: 'neutral',
     })
     expect(view.de).toBeNull()
     expect(view.en).toBeNull()
@@ -75,7 +75,7 @@ describe('buildSessionCardView', () => {
 
 describe('buildSessionView', () => {
   it('starts on the first card with nothing answered', () => {
-    const view = buildSessionView(startSession('b', 0, cards, START), lexicon)
+    const view = buildSessionView(startSession('b', cards, START), lexicon)
     expect(view.phase).toBe('introduction')
     expect(view.card?.lemma).toBe('jacal')
     expect(view.answered).toBe(0)
@@ -84,7 +84,7 @@ describe('buildSessionView', () => {
   })
 
   it('advances the progress fraction as cards are settled', () => {
-    let session = startSession('b', 0, cards, START)
+    let session = startSession('b', cards, START)
     session = introduce(session, 'ichKenneDas', START).session
     const view = buildSessionView(session, lexicon)
 
@@ -94,7 +94,7 @@ describe('buildSessionView', () => {
   })
 
   it('has no card once the session is complete', () => {
-    let session = startSession('b', 0, cards, START)
+    let session = startSession('b', cards, START)
     session = introduce(session, 'ichKenneDas', START).session
     session = introduce(session, 'weiter', START).session
     session = grade(session, 'good', START).session
@@ -108,7 +108,7 @@ describe('buildSessionView', () => {
   })
 
   it('calls an empty session complete rather than dividing by zero', () => {
-    const view = buildSessionView(startSession('b', 0, [], START), lexicon)
+    const view = buildSessionView(startSession('b', [], START), lexicon)
     expect(view.phase).toBe('complete')
     expect(view.fraction).toBe(1)
   })

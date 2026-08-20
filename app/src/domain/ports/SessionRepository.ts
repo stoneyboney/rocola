@@ -1,9 +1,11 @@
 /**
  * Storage port for a teaching session in progress.
  *
- * One open session per chapter, which is why the key is `[bookId, chapterIndex]`
- * and not a session id. There is no history to keep: a finished session's
- * result lives in the cards it created.
+ * One open session per song, which is why the key is the track id and not a
+ * session id. SPEC §11.1: one song is one session, and a song is never split —
+ * so there is no second axis, where Molcajete needed `[bookId, chapterIndex]`.
+ * There is no history to keep either: a finished session's result lives in the
+ * cards it created.
  *
  * ## Why `commit` takes the effects as well as the session
  *
@@ -19,14 +21,14 @@
  * data rather than performed by it.
  */
 
-import type { BookId } from '../types'
+import type { TrackId } from '../types'
 import type { SessionEffect, TeachingSession } from '../session/session'
 
 export interface SessionRepository {
-  load(bookId: BookId, chapterIndex: number): Promise<TeachingSession | undefined>
+  load(trackId: TrackId): Promise<TeachingSession | undefined>
 
   /** Atomically: the session, plus every card and known lemma it produced. */
   commit(session: TeachingSession, effects: readonly SessionEffect[]): Promise<void>
 
-  clear(bookId: BookId, chapterIndex: number): Promise<void>
+  clear(trackId: TrackId): Promise<void>
 }

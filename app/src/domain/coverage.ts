@@ -45,8 +45,9 @@
  * few hundred integers, which is worth keeping on its own.
  */
 
+import { linesOf, uniqueLinesOf, type Line, type Stanza } from './track'
 import { lemmaId, type LemmaId } from './lemma'
-import type { LemmaKey, LexiconEntry, Paragraph } from './types'
+import type { LemmaKey, LexiconEntry, TrackId } from './types'
 
 /** Everything about a text's vocabulary that does not need the text itself. */
 export interface Vocabulary {
@@ -58,13 +59,13 @@ export interface Vocabulary {
   tokenCount: number
 }
 
-export function countVocabulary(paragraphs: readonly Paragraph[]): Vocabulary {
+export function countVocabulary(lines: readonly Line[]): Vocabulary {
   const counts = new Map<LemmaKey, number>()
   let propnTokens = 0
   let tokenCount = 0
 
-  for (const paragraph of paragraphs) {
-    for (const token of paragraph.tokens) {
+  for (const line of lines) {
+    for (const token of line.tokens) {
       if (token.ws === true) continue
       // A lemma is what makes a token a word. Punctuation and numerals carry a
       // POS but no lemma, and they are not vocabulary.
@@ -108,6 +109,33 @@ export function computeCoverage(
   }
 
   return covered / vocabulary.tokenCount
+}
+
+/**
+ * Both counts, named so a caller has to choose. See THE TWO DENOMINATORS.
+ *
+ * Cached per track because the song list wants a figure for every track
+ * without reading every track's tokens, which is the same reason Molcajete
+ * cached `chapterVocab`.
+ */
+export interface TrackVocabulary {
+  trackId: TrackId
+  /** Every line. Coverage's denominator. */
+  all: Vocabulary
+  /** First occurrence of each line. The teach set's denominator. */
+  unique: Vocabulary
+}
+
+/** Count a song both ways at once. The only way `TrackVocabulary` is built. */
+export function countTrack(
+  trackId: TrackId,
+  stanzas: readonly Stanza[],
+): TrackVocabulary {
+  return {
+    trackId,
+    all: countVocabulary(linesOf(stanzas)),
+    unique: countVocabulary(uniqueLinesOf(stanzas)),
+  }
 }
 
 /**

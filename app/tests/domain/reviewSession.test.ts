@@ -24,8 +24,11 @@ const face: CardFace = {
   de: 'die Hütte',
   en: 'hut, shack',
   example: 'La puerta del jacal estaba abierta.',
-  regionNote: 'MX, ländlich',
-  mexicanism: true,
+  variety: 'es-MX',
+  register: 'coloquial',
+  badge: null,
+  homeEquivalent: null,
+  morphNote: null,
 }
 
 function card(lemmaId: string, withFace = true): SrsCard {
@@ -152,7 +155,7 @@ describe('the view model', () => {
     expect(view.card?.lemma).toBe('jacal')
     expect(view.card?.de).toBe('die Hütte')
     expect(view.card?.example).toBe('La puerta del jacal estaba abierta.')
-    expect(view.card?.mexicanism).toBe(true)
+    expect(view.card?.variety).toBe('es-MX')
   })
 
   it('falls back to the lemma alone for a card made before faces existed', () => {

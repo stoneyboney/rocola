@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { computeCoverage, countVocabulary } from '../../src/domain/coverage'
 import { lemmaId } from '../../src/domain/lemma'
-import type { LexiconEntry, Paragraph, Token } from '../../src/domain/types'
-import { LEXICON, lexiconMap, paragraphs } from '../fixture'
+import type { Line } from '../../src/domain/track'
+import type { LexiconEntry, Token } from '../../src/domain/types'
+import { LEXICON, lexiconMap, lines } from '../fixture'
 
 /** One paragraph of the given tokens, exactly as handed in. */
-function text(tokens: Token[]): Paragraph[] {
-  return [{ id: 'p0', tokens }]
+function text(tokens: Token[]): Line[] {
+  return [{ index: 0, text: '', tokens }]
 }
 
 const word = (s: string, l: string, t: string): Token => ({ s, l, p: 'NOUN', t })
@@ -19,9 +20,9 @@ function entry(lemma: string): LexiconEntry {
     lemma,
     pos: 'NOUN',
     zipf: 3,
-    bookCount: 5,
-    firstChapter: 0,
-    mexicanism: false,
+    uniqueLineCount: 5,
+    variety: 'general',
+    register: 'neutral',
   }
 }
 
@@ -118,7 +119,7 @@ describe('against the synthetic fixture', () => {
   it('partitions every word token into keyed or proper noun', () => {
     // The measurement the denominator rests on. Countable by reading
     // tests/fixture.ts: 17 word tokens, 16 keyed, 1 name.
-    const vocabulary = countVocabulary(paragraphs())
+    const vocabulary = countVocabulary(lines())
     const keyed = [...vocabulary.counts.values()].reduce((a, b) => a + b, 0)
 
     expect(vocabulary.tokenCount).toBe(17)
@@ -128,7 +129,7 @@ describe('against the synthetic fixture', () => {
   })
 
   it('starts low and reaches 1 when the whole lexicon is known', () => {
-    const vocabulary = countVocabulary(paragraphs())
+    const vocabulary = countVocabulary(lines())
     const everything = new Set(Object.values(LEXICON).map(lemmaId))
 
     // Only Durango is free, and it is 1 token of 17.
@@ -140,7 +141,7 @@ describe('against the synthetic fixture', () => {
     // 8 of the 16 keyed tokens are el/de/y. Learning every open-class word in
     // the text reaches 9 of 17 — the ceiling the closed-class rule imposes,
     // and the reason SPEC §8's Anki seed exists.
-    const vocabulary = countVocabulary(paragraphs())
+    const vocabulary = countVocabulary(lines())
     const openClass = new Set(
       Object.values(LEXICON)
         .filter((e) => !['DET', 'ADP', 'CCONJ'].includes(e.pos))

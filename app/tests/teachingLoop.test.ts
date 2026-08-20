@@ -25,6 +25,7 @@ import { describe, expect, it } from 'vitest'
 import { computeCoverage, countVocabulary } from '../src/domain/coverage'
 import { buildKnownState, type KnownState } from '../src/domain/knownLemmas'
 import { lemmaId } from '../src/domain/lemma'
+import { badgeFor } from '../src/domain/types'
 import type { CardRepository } from '../src/domain/ports/CardRepository'
 import type { KnownLemmaRepository } from '../src/domain/ports/KnownLemmaRepository'
 import type { SessionRepository } from '../src/domain/ports/SessionRepository'
@@ -47,7 +48,7 @@ import {
   FakeSessionRepository,
 } from './fakes'
 import { fixedClock } from './clock'
-import { LEXICON, lexiconMap, paragraphs } from './fixture'
+import { LEXICON, lexiconMap, lines } from './fixture'
 
 const TRACK = 'cancion-sintetica'
 const START = new Date('2026-01-01T09:00:00Z')
@@ -88,11 +89,11 @@ async function openSession(
 ): Promise<{ session: TeachingSession; resumed: boolean; state: KnownState }> {
   const state = await loadKnownState(app.cards, app.known)
 
-  const stored = await app.sessions.load(TRACK, 0)
+  const stored = await app.sessions.load(TRACK)
   if (stored) return { session: stored, resumed: true, state }
 
   const lexicon = lexiconMap()
-  const vocabulary = countVocabulary(paragraphs())
+  const vocabulary = countVocabulary(lines())
   const { teach } = selectTeachSet(
     vocabulary.counts,
     lexicon,
@@ -105,7 +106,6 @@ async function openSession(
 
   const session = startSession(
     TRACK,
-    0,
     teach.map((key) => {
       const entry = lexicon.get(key)!
       return {
@@ -118,8 +118,11 @@ async function openSession(
           de: entry.de ?? null,
           en: entry.en ?? null,
           example: entry.example?.es ?? null,
-          regionNote: entry.regionNote ?? null,
-          mexicanism: entry.mexicanism,
+          variety: entry.variety,
+          register: entry.register,
+          badge: badgeFor(entry.variety, 'es-MX'),
+          homeEquivalent: entry.homeEquivalent ?? null,
+          morphNote: entry.morphNote ?? null,
         },
       }
     }),
@@ -195,7 +198,7 @@ describe('coverage', () => {
     const { state } = await openSession(app)
 
     const coverage = computeCoverage(
-      countVocabulary(paragraphs()),
+      countVocabulary(lines()),
       lexiconMap(),
       state.known,
     )
@@ -221,7 +224,7 @@ describe('coverage', () => {
     expect(state.known.size).toBe(TEACHABLE)
 
     const coverage = computeCoverage(
-      countVocabulary(paragraphs()),
+      countVocabulary(lines()),
       lexiconMap(),
       state.known,
     )
@@ -240,7 +243,7 @@ describe('coverage', () => {
     // on everything, and it is the warning that is premature, not the
     // arithmetic. Do not "fix" this by teaching `el`.
     const lexicon = lexiconMap()
-    const vocabulary = countVocabulary(paragraphs())
+    const vocabulary = countVocabulary(lines())
     const { teach } = selectTeachSet(
       vocabulary.counts,
       lexicon,
@@ -292,7 +295,7 @@ describe('"Ich kenne das"', () => {
     expect(state.known.size).toBe(5)
 
     const coverage = computeCoverage(
-      countVocabulary(paragraphs()),
+      countVocabulary(lines()),
       lexiconMap(),
       state.known,
     )
@@ -367,7 +370,7 @@ describe('cards are global', () => {
     const state = await loadKnownState(app.cards, app.known)
     const lexicon = lexiconMap()
     const { teach } = selectTeachSet(
-      countVocabulary(paragraphs()).counts,
+      countVocabulary(lines()).counts,
       lexicon,
       new Set([...state.known, ...state.carded]),
       DEFAULT_TEACH_SET_OPTIONS,

@@ -10,7 +10,7 @@
  * stays language-neutral for the port.
  */
 
-import type { LemmaKey, LexiconEntry } from '../types'
+import { badgeFor, type LemmaKey, type LexiconEntry, type Register, type Variety } from '../types'
 import {
   answeredCount,
   currentCard,
@@ -27,10 +27,14 @@ export interface SessionCardView {
   de: string | null
   /** English, small and beneath. */
   en: string | null
-  /** The sentence from this book the gloss was disambiguated against. */
+  /** The line from this song the gloss was disambiguated against. */
   example: string | null
-  regionNote: string | null
-  mexicanism: boolean
+  variety: Variety
+  register: Register
+  /** SPEC §9.2's badge, or null. Prompt B renders it; this only carries it. */
+  badge: string | null
+  homeEquivalent: string | null
+  morphNote: string | null
 }
 
 export interface SessionView {
@@ -73,6 +77,7 @@ export function buildSessionView(
 export function buildSessionCardView(
   key: LemmaKey,
   entry: LexiconEntry | undefined,
+  homeDialect: Variety = 'es-MX',
 ): SessionCardView {
   if (!entry) {
     return {
@@ -82,8 +87,11 @@ export function buildSessionCardView(
       de: null,
       en: null,
       example: null,
-      regionNote: null,
-      mexicanism: false,
+      variety: 'general',
+      register: 'neutral',
+      badge: null,
+      homeEquivalent: null,
+      morphNote: null,
     }
   }
 
@@ -94,7 +102,10 @@ export function buildSessionCardView(
     de: entry.de ?? null,
     en: entry.en ?? null,
     example: entry.example?.es ?? null,
-    regionNote: entry.regionNote ?? null,
-    mexicanism: entry.mexicanism,
+    variety: entry.variety,
+    register: entry.register,
+    badge: badgeFor(entry.variety, homeDialect),
+    homeEquivalent: entry.homeEquivalent ?? null,
+    morphNote: entry.morphNote ?? null,
   }
 }

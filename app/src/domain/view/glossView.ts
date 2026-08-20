@@ -8,7 +8,7 @@
  * blank and looking broken.
  */
 
-import type { LemmaKey, LexiconEntry } from '../types'
+import { badgeFor, type LemmaKey, type LexiconEntry, type Register, type Variety } from '../types'
 
 export interface GlossView {
   key: LemmaKey
@@ -19,22 +19,26 @@ export interface GlossView {
   en: string | null
   /** The sentence from this book that the gloss was disambiguated against. */
   example: string | null
+  variety: Variety
+  register: Register
   /**
-   * Where and how the word is used, when the pipeline said anything.
+   * SPEC §9.2's badge, or null when there is none to show.
    *
-   * Not gated on `mexicanism`. The pipeline requires a note whenever the flag
-   * is set, but not the reverse, and the fixture has a real case of the
-   * reverse: `huizach` is annotated "Mexiko, ländlich" with the flag false.
-   * That note is worth reading whatever the flag says.
+   * The reader's own surface gets this too, not only the card back: someone
+   * tapping `pibe` mid-song wants to know it is Argentine right then, which is
+   * the moment the information is worth anything.
    */
-  regionNote: string | null
-  /** Flagged as Mexican usage — one of the three SPEC §5 reasons to teach it. */
-  mexicanism: boolean
+  badge: string | null
+  /** What a speaker at home would say instead. Null when they say the same. */
+  homeEquivalent: string | null
+  /** §9.3: voseo and vosotros. Recognisable, never drilled. */
+  morphNote: string | null
 }
 
 export function buildGlossView(
   key: LemmaKey,
   entry: LexiconEntry | undefined,
+  homeDialect: Variety,
 ): GlossView | null {
   if (!entry) return null
   return {
@@ -44,7 +48,10 @@ export function buildGlossView(
     de: entry.de ?? null,
     en: entry.en ?? null,
     example: entry.example?.es ?? null,
-    regionNote: entry.regionNote ?? null,
-    mexicanism: entry.mexicanism,
+    variety: entry.variety,
+    register: entry.register,
+    badge: badgeFor(entry.variety, homeDialect),
+    homeEquivalent: entry.homeEquivalent ?? null,
+    morphNote: entry.morphNote ?? null,
   }
 }

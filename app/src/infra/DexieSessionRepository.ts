@@ -1,6 +1,6 @@
 import type { SessionRepository } from '../domain/ports/SessionRepository'
 import type { SessionEffect, TeachingSession } from '../domain/session/session'
-import type { BookId } from '../domain/types'
+import type { TrackId } from '../domain/types'
 import { db, type RocolaDatabase } from './db'
 
 /**
@@ -15,11 +15,8 @@ import { db, type RocolaDatabase } from './db'
 export class DexieSessionRepository implements SessionRepository {
   constructor(private readonly database: RocolaDatabase = db) {}
 
-  async load(
-    bookId: BookId,
-    chapterIndex: number,
-  ): Promise<TeachingSession | undefined> {
-    const row = await this.database.sessions.get([bookId, chapterIndex])
+  async load(trackId: TrackId): Promise<TeachingSession | undefined> {
+    const row = await this.database.sessions.get(trackId)
     return row?.session
   }
 
@@ -42,18 +39,14 @@ export class DexieSessionRepository implements SessionRepository {
       if (session.phase === 'complete') {
         // Nothing to resume, and the result is in the cards. Keeping finished
         // sessions would only give `load` something to filter.
-        await sessions.delete([session.bookId, session.chapterIndex])
+        await sessions.delete(session.trackId)
       } else {
-        await sessions.put({
-          bookId: session.bookId,
-          chapterIndex: session.chapterIndex,
-          session,
-        })
+        await sessions.put({ trackId: session.trackId, session })
       }
     })
   }
 
-  async clear(bookId: BookId, chapterIndex: number): Promise<void> {
-    await this.database.sessions.delete([bookId, chapterIndex])
+  async clear(trackId: TrackId): Promise<void> {
+    await this.database.sessions.delete(trackId)
   }
 }

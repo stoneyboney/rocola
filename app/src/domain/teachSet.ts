@@ -68,12 +68,19 @@ export const CLOSED_CLASS_POS: ReadonlySet<string> = new Set([
 ])
 
 export interface TeachSetOptions {
-  /** §5: `bookCount >= 3` earns a card on its own. */
+  /** §5: `uniqueLineCount >= 3` earns a card on its own. */
   minBookCount: number
   /** §5: `zipf >= 3.5`, roughly the top 5000 words. */
   zipfThreshold: number
-  /** §5: a mexicanism needs only `bookCount >= 2`. */
-  mexicanismMinBookCount: number
+  /**
+   * §5: a regional word needs only two occurrences.
+   *
+   * Molcajete asked "is this Mexican". A pan-Hispanic rotation asks "is this
+   * anyone's regionalism", which is the useful reading of the same rule — the
+   * point is to promote a word the reader will not meet elsewhere, and where
+   * it comes from does not change that.
+   */
+  regionalMinLineCount: number
   /** See `CLOSED_CLASS_POS`. Injected so a test can vary it. */
   excludedPos: ReadonlySet<string>
   /**
@@ -89,14 +96,14 @@ export interface TeachSetOptions {
 export const DEFAULT_TEACH_SET_OPTIONS: TeachSetOptions = {
   minBookCount: 3,
   zipfThreshold: 3.5,
-  mexicanismMinBookCount: 2,
+  regionalMinLineCount: 2,
   excludedPos: CLOSED_CLASS_POS,
   carded: new Set(),
 }
 
 export interface TeachSetSelection {
   /**
-   * Uncapped, ordered by `bookCount` descending so that an abandoned session
+   * Uncapped, ordered by `uniqueLineCount` descending so that an abandoned session
    * still taught the most useful words (§5 Step 3). Ties break on the key so
    * that two runs over the same data produce the same list.
    */
@@ -116,9 +123,9 @@ export function isTeachable(
   if (entry.pos === 'PROPN') return false
   if (opts.excludedPos.has(entry.pos)) return false
 
-  if (entry.bookCount >= opts.minBookCount) return true
+  if (entry.uniqueLineCount >= opts.minBookCount) return true
   if (entry.zipf >= opts.zipfThreshold) return true
-  if (entry.mexicanism && entry.bookCount >= opts.mexicanismMinBookCount) {
+  if (entry.variety !== 'general' && entry.uniqueLineCount >= opts.regionalMinLineCount) {
     return true
   }
   return false
@@ -157,7 +164,7 @@ export function selectTeachSet(
 
   teach.sort((a, b) => {
     const byCount =
-      (lexicon.get(b)?.bookCount ?? 0) - (lexicon.get(a)?.bookCount ?? 0)
+      (lexicon.get(b)?.uniqueLineCount ?? 0) - (lexicon.get(a)?.uniqueLineCount ?? 0)
     return byCount !== 0 ? byCount : a < b ? -1 : a > b ? 1 : 0
   })
   glossOnly.sort()

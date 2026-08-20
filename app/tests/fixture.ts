@@ -10,11 +10,12 @@
  * against it should be checkable by reading this file, which the 26,829-byte
  * bundle it replaces was not.
  *
- * The shape is still `Paragraph[]` and a `Lexicon`, the names Phase 3 renames
- * to lines and stanzas once `LyricDocument` exists.
+ * The shape is `Stanza[]` of `Line[]` and a `Lexicon` — SPEC §6.2, which is
+ * what the reader and the teach set read from opposite ends.
  */
 
-import type { LemmaKey, LexiconEntry, Lexicon, Paragraph, Token } from '../src/domain/types'
+import type { Line, Stanza } from '../src/domain/track'
+import type { LemmaKey, LexiconEntry, Lexicon, Token } from '../src/domain/types'
 
 export const space: Token = { s: ' ', ws: true }
 export const punct = (s: string): Token => ({ s, p: 'PUNCT' })
@@ -29,13 +30,13 @@ export function propn(surface: string, lemma = surface): Token {
 }
 
 /** Builds a paragraph from tokens, interleaving the spaces. */
-export function line(id: string, tokens: Token[]): Paragraph {
+export function line(index: number, text: string, tokens: Token[]): Line {
   const spaced: Token[] = []
-  tokens.forEach((token, index) => {
-    if (index > 0 && !(token.ws !== true && token.p === 'PUNCT')) spaced.push(space)
+  tokens.forEach((token, i) => {
+    if (i > 0 && !(token.ws !== true && token.p === 'PUNCT')) spaced.push(space)
     spaced.push(token)
   })
-  return { id, tokens: spaced }
+  return { index, text, tokens: spaced }
 }
 
 export function entry(
@@ -46,9 +47,9 @@ export function entry(
     lemma,
     pos: 'NOUN',
     zipf: 3.8,
-    bookCount: 4,
-    firstChapter: 0,
-    mexicanism: false,
+    uniqueLineCount: 4,
+    variety: 'general',
+    register: 'neutral',
     de: `${lemma} auf Deutsch`,
     en: `${lemma} in English`,
     example: { es: `Una frase con ${lemma}.`, de: `Ein Satz mit ${lemma}.` },
@@ -92,16 +93,16 @@ export function lexiconMap(): Map<LemmaKey, LexiconEntry> {
  * Punctuation carries no lemma and is not a word token. Every number here is
  * countable by reading the four lines below.
  */
-export function paragraphs(): Paragraph[] {
+export function lines(): Line[] {
   return [
-    line('p0', [
+    line(0, 'El cerro de Durango,', [
       word('El', 'el', 'f1', 'DET'),
       word('cerro', 'cerro', 'k1'),
       word('de', 'de', 'f2', 'ADP'),
       propn('Durango'),
       punct(','),
     ]),
-    line('p1', [
+    line(1, 'la sierra y el caballo.', [
       word('la', 'el', 'f1', 'DET'),
       word('sierra', 'sierra', 'k2'),
       word('y', 'y', 'f3', 'CCONJ'),
@@ -109,14 +110,14 @@ export function paragraphs(): Paragraph[] {
       word('caballo', 'caballo', 'k3'),
       punct('.'),
     ]),
-    line('p2', [
+    line(2, 'Cantan a la luna,', [
       word('Cantan', 'cantar', 'k6', 'VERB'),
       word('a', 'de', 'f2', 'ADP'),
       word('la', 'el', 'f1', 'DET'),
       word('luna', 'luna', 'k7'),
       punct(','),
     ]),
-    line('p3', [
+    line(3, 'sombra del camino viejo.', [
       word('sombra', 'sombra', 'k4'),
       word('del', 'de', 'f2', 'ADP'),
       word('camino', 'camino', 'k5'),
@@ -124,4 +125,37 @@ export function paragraphs(): Paragraph[] {
       punct('.'),
     ]),
   ]
+}
+
+
+/** The four lines as two stanzas. What the reader is handed. */
+export function stanzas(): Stanza[] {
+  const all = lines()
+  return [
+    { index: 0, lines: [all[0]!, all[1]!] },
+    { index: 1, lines: [all[2]!, all[3]!] },
+  ]
+}
+
+/**
+ * The same song with its second stanza sung `times` times over.
+ *
+ * The repeats carry `repeatOf`, so `uniqueLinesOf` drops them and `linesOf`
+ * keeps them — which is the entire two-denominator question in one fixture.
+ */
+export function withRepeatedStanza(times: number): Stanza[] {
+  const [first, chorus] = stanzas()
+  const out: Stanza[] = [first!, chorus!]
+  for (let n = 1; n < times; n++) {
+    out.push({
+      index: out.length,
+      repeatOf: chorus!.index,
+      lines: chorus!.lines.map((line, i) => ({
+        ...line,
+        index: 4 + (n - 1) * 2 + i,
+        repeatOf: line.index,
+      })),
+    })
+  }
+  return out
 }

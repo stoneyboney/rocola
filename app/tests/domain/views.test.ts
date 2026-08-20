@@ -8,9 +8,9 @@ describe('buildGlossView', () => {
     lemma: 'huizach',
     pos: 'NOUN',
     zipf: 1.2,
-    bookCount: 1,
-    firstChapter: 0,
-    mexicanism: false,
+    uniqueLineCount: 1,
+    variety: 'general',
+    register: 'neutral',
     ...over,
   })
 
@@ -18,48 +18,59 @@ describe('buildGlossView', () => {
     // Wiktionary does not reach SPEC §12's 95% alone and the model half
     // rejects lemmas it doubts, so this is a normal state the sheet has to be
     // able to say out loud.
-    const view = buildGlossView('m0037', entry())
+    const view = buildGlossView('m0037', entry(), 'es-MX')
     expect(view?.de).toBeNull()
     expect(view?.en).toBeNull()
     expect(view?.example).toBeNull()
   })
 
-  it('carries the glosses and the book sentence when they are there', () => {
+  it('carries the glosses and the song line when they are there', () => {
     const view = buildGlossView(
       'm0037',
       entry({
         de: 'die Akazie',
         en: 'acacia',
-        example: { es: 'levantando polvo entre los huizaches.', chapterIndex: 0 },
+        example: { es: 'levantando polvo entre los huizaches.' },
       }),
+      'es-MX',
     )
     expect(view?.de).toBe('die Akazie')
     expect(view?.en).toBe('acacia')
     expect(view?.example).toBe('levantando polvo entre los huizaches.')
   })
 
-  it('passes a region note through whether or not the flag is set', () => {
-    // The pipeline requires a note whenever `mexicanism` is true, but not the
-    // reverse — `huizach` is annotated "Mexiko, ländlich" with the flag false.
-    // Gating the note on the flag would drop that.
-    //
-    // SPEC §6.3 replaces this pair with `variety` and `register` in Phase 2,
-    // and the same asymmetry will apply: a sense can carry a regional label
-    // without its variety being anything but `general`.
-    const unflagged = buildGlossView('m1', entry({ regionNote: 'Mexiko, ländlich' }))
-    expect(unflagged?.regionNote).toBe('Mexiko, ländlich')
-    expect(unflagged?.mexicanism).toBe(false)
-
-    const flagged = buildGlossView(
+  it('carries a register even when the variety is general', () => {
+    // The asymmetry SPEC §6.3 keeps from Molcajete's flag-and-note pair: a
+    // sense can be marked in register without belonging to one country.
+    // `pendejo` is the real case — vulgar across Latin America, and `general`.
+    const view = buildGlossView(
       'm1',
-      entry({ mexicanism: true, regionNote: 'MX, coloquial' }),
+      entry({ variety: 'general', register: 'vulgar' }),
+      'es-MX',
     )
-    expect(flagged?.regionNote).toBe('MX, coloquial')
-    expect(flagged?.mexicanism).toBe(true)
+    expect(view?.variety).toBe('general')
+    expect(view?.register).toBe('vulgar')
+    expect(view?.badge).toBeNull()
+  })
+
+  it('badges a foreign variety and not the home one', () => {
+    // SPEC §9.2's table. In Monterrey a Monterrey word is just a word.
+    const foreign = buildGlossView('m1', entry({ variety: 'es-AR' }), 'es-MX')
+    expect(foreign?.badge).toBe('AR')
+
+    const home = buildGlossView('m1', entry({ variety: 'es-MX' }), 'es-MX')
+    expect(home?.badge).toBeNull()
+  })
+
+  it('takes the home dialect as an argument, never a constant', () => {
+    // CLAUDE.md §5. Move home and the same word changes how it is shown.
+    const sameWord = entry({ variety: 'es-MX' })
+    expect(buildGlossView('m1', sameWord, 'es-AR')?.badge).toBe('MX')
+    expect(buildGlossView('m1', sameWord, 'es-MX')?.badge).toBeNull()
   })
 
   it('returns null for a key the lexicon slice does not hold', () => {
-    expect(buildGlossView('m9999', undefined)).toBeNull()
+    expect(buildGlossView('m9999', undefined, 'es-MX')).toBeNull()
   })
 })
 

@@ -22,7 +22,7 @@ const cards: SessionCardInput[] = [
 ]
 
 function session(input: SessionCardInput[] = cards): TeachingSession {
-  return startSession('anonimo-los-del-cerro', 0, input, START)
+  return startSession('selena-como-la-flor', input, START)
 }
 
 /** Walk the introduction phase, answering `Weiter` to everything. */
