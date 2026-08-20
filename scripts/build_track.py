@@ -32,6 +32,7 @@ import json
 import re
 import sys
 import unicodedata
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -57,6 +58,29 @@ def track_id(artist: str, title: str) -> str:
     slug = unicodedata.normalize("NFKD", slug)
     slug = "".join(c for c in slug if not unicodedata.combining(c)).lower()
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", slug)).strip("-")
+
+
+def token_json(token, lexicon) -> dict:
+    """One token, in the shape the reader has always consumed.
+
+    Ported from Molcajete's `bundle.py` rather than re-derived: `{s, ws}` for
+    whitespace, `{s, p}` for punctuation and numerals, `{s, l, p}` for a word,
+    and `t` only when the token points at a lexicon entry. A proper noun has a
+    lemma and no `t`, which is what makes it untappable in the reader for free.
+    """
+    if token.is_whitespace:
+        return {"s": token.surface, "ws": True}
+
+    entry: dict = {"s": token.surface, "p": lexicon.effective_pos(token)}
+    if not token.is_word or token.lemma is None:
+        # `l` would only repeat `s`.
+        return entry
+
+    entry["l"] = token.lemma
+    key = lexicon.key_for(token)
+    if key is not None:
+        entry["t"] = key
+    return entry
 
 
 def load_known(path: Path | None) -> frozenset[str]:
@@ -216,22 +240,31 @@ def main() -> int:
     out = args.out or REPO / "tracks" / f"{identifier}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    def card(entry) -> dict:
-        gloss = glossing.gloss_for(entry.key)
-        sense = sense_for(entry.key)
+    def lexicon_entry(key: str) -> dict:
+        """One lexicon entry, for every key the song refers to.
+
+        Every key, not only the taught ones. `glossOnly` words are the ones the
+        reader taps and gets a gloss for without ever being carded — they were
+        a list of keys pointing at nothing until now, which is why no gloss
+        sheet could open.
+        """
+        record = prepared.lexicon.records[key]
+        gloss = glossing.gloss_for(key)
+        sense = senses.get((record.lemma, record.pos))
+        found = example_sentence(record, prepared.song)
         # The model pass wins on the glosses: it saw the line the word occurs
         # in, and §7.5 asks for German first for exactly that reason.
-        de = (sense.de if sense else None) or (gloss.de if gloss else None)
-        en = (sense.en if sense else None) or (gloss.en if gloss else None)
         return {
-            "key": entry.key,
-            "lemma": entry.lemma,
-            "pos": entry.pos,
-            "zipf": round(entry.zipf, 2),
-            "uniqueLineCount": entry.unique_line_count,
-            "example": entry.example,
-            "de": de,
-            "en": en,
+            "lemma": record.lemma,
+            "pos": record.pos,
+            "zipf": round(record.zipf, 2),
+            # Occurrences across UNIQUE lines. The teach set's denominator;
+            # coverage counts over every line and gets its own numbers from
+            # the tokens below. See the plan's two-denominator note.
+            "uniqueLineCount": record.book_count,
+            "example": found[0] if found else None,
+            "de": (sense.de if sense else None) or (gloss.de if gloss else None),
+            "en": (sense.en if sense else None) or (gloss.en if gloss else None),
             # SPEC §6.3. `variety` is `general` unless the model was sure; see
             # docs/phase2-variety-eval.md for how often that is right.
             "variety": sense.variety.value if sense else Variety.GENERAL.value,
@@ -249,10 +282,20 @@ def main() -> int:
             ),
         }
 
+    # Tokens for every line, repeats included: the reader renders the whole
+    # song. `prepared.song` is the unique lines and is what the teach set was
+    # counted over — the two are deliberately different and both are needed.
+    tokens_by_line = {
+        line.index: [token_json(tok, prepared.lexicon) for tok in tokens]
+        for line, tokens in zip(document.lines, prepared.all_tokens, strict=True)
+    }
+
     out.write_text(
         json.dumps(
             {
-                "schemaVersion": 1,
+                # 2, not 1. A version-1 file has no tokens and no lexicon, so
+                # nothing can render it — the app rejects it and says to rebuild.
+                "schemaVersion": 2,
                 "id": identifier,
                 "artist": args.artist,
                 "title": args.title,
@@ -261,6 +304,9 @@ def main() -> int:
                 "languageConfidence": round(language.confidence, 3),
                 "lrclibId": resolution.candidate.id,
                 "rung": int(resolution.rung),
+                # SPEC §6.2. `manual` arrives with §8.5's paste path.
+                "source": "lrclib",
+                "fetchedAt": datetime.now(timezone.utc).isoformat(),
                 "stanzas": [
                     {
                         "index": stanza.index,
@@ -270,13 +316,22 @@ def main() -> int:
                                 "index": line.index,
                                 "text": line.text,
                                 "repeatOf": line.repeat_of,
+                                "tokens": tokens_by_line[line.index],
                             }
                             for line in stanza.lines
                         ],
                     }
                     for stanza in document.stanzas
                 ],
-                "teach": [card(entry) for entry in teach_set.teach],
+                # `lexicon` is the single source; these two are key lists into
+                # it. `teach` is a CLI diagnostic — **the app must not read it.**
+                # It was computed against a known-set that was already stale
+                # when the file was written, and the app recomputes from the
+                # token counts against live state.
+                "lexicon": {
+                    key: lexicon_entry(key) for key in sorted(prepared.lexicon.records)
+                },
+                "teach": [entry.key for entry in teach_set.teach],
                 "glossOnly": list(teach_set.gloss_only),
                 "counts": {
                     "wordTokens": teach_set.total_word_tokens,
@@ -296,7 +351,7 @@ def main() -> int:
     print(f"\n{len(teach_set.teach)} cards" + ("  (dense)" if teach_set.is_dense else ""))
     for entry in teach_set.teach[:25]:
         gloss = glossing.gloss_for(entry.key)
-        sense = sense_for(entry.key)
+        sense = senses.get((entry.lemma, entry.pos))
         german = (sense.de if sense else None) or (gloss.de if gloss else None) or "—"
         badge = (
             f"  [{sense.variety.badge}]"

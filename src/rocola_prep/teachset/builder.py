@@ -109,6 +109,12 @@ class SongLexicon:
     #: One song as one "chapter", whose paragraphs are the unique lines. The
     #: shape `gloss_lexicon` and `example_sentence` both expect.
     song: list[list[Token]]
+    #: Every line's tokens, repeats included, in document order. The *reader*
+    #: needs these — it renders the whole song — where the teach set needs
+    #: `song`. Kept rather than counted and thrown away, because tokenising is
+    #: the expensive part and doing it twice to get two views of one song is
+    #: paying twice for the same spaCy pass.
+    all_tokens: list[list[Token]]
     unique_word_tokens: int
     total_word_tokens: int
 
@@ -126,6 +132,7 @@ def prepare(document: LyricDocument, nlp) -> SongLexicon:
     return SongLexicon(
         lexicon=build_lexicon(song),
         song=song,
+        all_tokens=all_tokens,
         unique_word_tokens=_word_tokens(unique_tokens),
         total_word_tokens=_word_tokens(all_tokens),
     )

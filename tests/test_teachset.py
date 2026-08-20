@@ -90,6 +90,52 @@ class TestChorusDeduplication:
         assert repetitive.unique_word_tokens == plain.unique_word_tokens
 
 
+class TestPreparedTokens:
+    """`prepare` keeps both views of the song, and they are not the same view."""
+
+    def test_keeps_the_tokens_of_every_line_not_only_the_unique_ones(
+        self, nlp
+    ) -> None:
+        from rocola_prep.teachset.builder import prepare
+
+        doc = parse_document(song(VERSE_ONE, CHORUS, CHORUS, CHORUS))
+        prepared = prepare(doc, nlp)
+
+        # `song` is the teach set's view: one "chapter" of unique lines.
+        assert len(prepared.song) == 1
+        assert len(prepared.song[0]) > 0
+
+        # `all_tokens` is the reader's view: one entry per line, in order,
+        # repeats included. The reader renders the whole song.
+        assert len(prepared.all_tokens) == len(doc.lines)
+        assert len(prepared.all_tokens) > len(doc.unique_lines)
+
+    def test_the_two_views_disagree_exactly_where_the_chorus_repeats(
+        self, nlp
+    ) -> None:
+        from rocola_prep.teachset.builder import prepare
+
+        prepared = prepare(parse_document(song(VERSE_ONE, CHORUS, CHORUS)), nlp)
+        assert prepared.unique_word_tokens < prepared.total_word_tokens
+
+    def test_a_song_with_no_repeats_has_the_same_count_both_ways(self, nlp) -> None:
+        from rocola_prep.teachset.builder import prepare
+
+        prepared = prepare(parse_document(song(VERSE_ONE, VERSE_TWO)), nlp)
+        assert prepared.unique_word_tokens == prepared.total_word_tokens
+
+    def test_line_order_is_preserved(self, nlp) -> None:
+        # The reader zips these against the document's lines by position, so a
+        # reordering here would put one line's tokens under another's text.
+        from rocola_prep.teachset.builder import prepare
+
+        doc = parse_document(song(VERSE_ONE, CHORUS))
+        prepared = prepare(doc, nlp)
+        for line, tokens in zip(doc.lines, prepared.all_tokens):
+            rebuilt = "".join(token.surface for token in tokens)
+            assert rebuilt.strip() == line.text.strip()
+
+
 class TestInheritedRules:
     def test_teaches_no_closed_class_word(self, nlp) -> None:
         result = build_teach_set(parse_document(song(VERSE_ONE, VERSE_TWO)), nlp)
