@@ -129,9 +129,6 @@ function parseToken(value: unknown, at: string): Token {
 
 function parseEntry(value: unknown, at: string): LexiconEntry {
   const raw = object(value, at)
-  const example = raw.example === undefined || raw.example === null
-    ? undefined
-    : object(raw.example, `${at}.example`)
 
   return {
     lemma: str(raw.lemma, `${at}.lemma`),
@@ -142,15 +139,7 @@ function parseEntry(value: unknown, at: string): LexiconEntry {
     register: register(raw.register),
     ...optional('de', optionalString(raw.de, `${at}.de`)),
     ...optional('en', optionalString(raw.en, `${at}.en`)),
-    ...optional(
-      'example',
-      example
-        ? {
-            es: str(example.es, `${at}.example.es`),
-            ...optional('de', optionalString(example.de, `${at}.example.de`)),
-          }
-        : undefined,
-    ),
+    ...optional('example', optionalString(raw.example, `${at}.example`)),
     ...optional(
       'homeEquivalent',
       optionalString(raw.homeEquivalent, `${at}.homeEquivalent`),

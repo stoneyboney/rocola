@@ -53,6 +53,7 @@ function track(overrides: Record<string, unknown> = {}): Record<string, unknown>
         uniqueLineCount: 1,
         de: 'der Weg',
         en: 'path',
+        example: 'Camino solo',
         variety: 'general',
         register: 'neutral',
       },
@@ -187,6 +188,20 @@ describe('tolerance where a strict reading would cost a song', () => {
   it('defaults a missing source to lrclib', () => {
     const doc = parseTrack(track({ source: undefined }))
     expect(doc.track.source).toBe('lrclib')
+  })
+})
+
+describe('the example is a line, not an object', () => {
+  it('reads the string the pipeline emits', () => {
+    // The two sides disagreed here until a real file met the parser: the
+    // pipeline writes `example: "Camino solo"` and the app expected
+    // `{ es: ... }`, Molcajete's shape with a German translation nothing
+    // produces. Caught on the first import of a real song.
+    expect(parseTrack(track()).lexicon.k1!.example).toBe('Camino solo')
+  })
+
+  it('treats a missing example as absent, not empty', () => {
+    expect('example' in parseTrack(track()).lexicon.k2!).toBe(false)
   })
 })
 

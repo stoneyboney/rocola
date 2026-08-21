@@ -52,7 +52,7 @@ export function entry(
     register: 'neutral',
     de: `${lemma} auf Deutsch`,
     en: `${lemma} in English`,
-    example: { es: `Una frase con ${lemma}.`, de: `Ein Satz mit ${lemma}.` },
+    example: `Una frase con ${lemma}.`,
     ...overrides,
   }
 }

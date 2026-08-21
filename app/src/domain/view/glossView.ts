@@ -47,7 +47,7 @@ export function buildGlossView(
     pos: entry.pos,
     de: entry.de ?? null,
     en: entry.en ?? null,
-    example: entry.example?.es ?? null,
+    example: entry.example ?? null,
     variety: entry.variety,
     register: entry.register,
     badge: badgeFor(entry.variety, homeDialect),

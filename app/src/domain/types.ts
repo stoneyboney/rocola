@@ -51,11 +51,6 @@ export interface WordToken {
 
 export type Token = WhitespaceToken | WordToken
 
-export interface Example {
-  es: string
-  de?: string
-}
-
 /**
  * SPEC §6.3's variety. `general` is pan-Hispanic and is both the default and
  * the fallback for anything unrecognised — CLAUDE.md §5: over-tagging is the
@@ -90,7 +85,16 @@ export interface LexiconEntry {
    */
   de?: string
   en?: string
-  example?: Example
+  /**
+   * One line of the song, showing the word in use. §13 allows exactly one per
+   * card and never a stanza.
+   *
+   * A bare string, not `{ es, de }`. Molcajete's shape carried an optional
+   * German translation of the example sentence; nothing in Rocola's pipeline
+   * produces one and every consumer already flattened it to `.es`. The two
+   * sides disagreed about this until a real file met `parseTrack`.
+   */
+  example?: string
 
   // -- SPEC §6.3, the variety extension --------------------------------
   variety: Variety

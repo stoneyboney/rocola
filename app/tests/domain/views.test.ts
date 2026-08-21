@@ -30,7 +30,7 @@ describe('buildGlossView', () => {
       entry({
         de: 'die Akazie',
         en: 'acacia',
-        example: { es: 'levantando polvo entre los huizaches.' },
+        example: 'levantando polvo entre los huizaches.',
       }),
       'es-MX',
     )

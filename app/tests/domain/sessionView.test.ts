@@ -24,7 +24,7 @@ function entry(over: Partial<LexiconEntry> = {}): LexiconEntry {
     de: 'Hütte',
     en: 'hut, shack',
     homeEquivalent: 'chavo',
-    example: { es: 'La puerta del jacal estaba abierta.' },
+    example: 'La puerta del jacal estaba abierta.',
     ...over,
   }
 }
