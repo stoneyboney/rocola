@@ -12,7 +12,14 @@
  * text uses `tests/fixture.ts` directly.
  */
 
+import { countTrack, type TrackVocabulary } from '../src/domain/coverage'
 import type { LemmaId } from '../src/domain/lemma'
+import type {
+  TrackRepository,
+  TrackSummary,
+} from '../src/domain/ports/TrackRepository'
+import type { Stanza, Track, TrackDocument } from '../src/domain/track'
+import type { LemmaKey, LexiconEntry } from '../src/domain/types'
 import type { CardRepository } from '../src/domain/ports/CardRepository'
 import type { KnownLemmaRepository } from '../src/domain/ports/KnownLemmaRepository'
 import type { SessionRepository } from '../src/domain/ports/SessionRepository'
@@ -100,5 +107,66 @@ export class FakeSessionRepository implements SessionRepository {
 
   async clear(trackId: TrackId): Promise<void> {
     this.rows.delete(trackId)
+  }
+}
+
+/**
+ * Tracks in memory.
+ *
+ * Deliberately mirrors `DexieTrackRepository`'s *contract*, not its storage: it
+ * keeps whole documents in a Map where the real one shreds them. The shredding
+ * is an IndexedDB concern and nothing above the port can tell the difference,
+ * which is the point of the port.
+ */
+export class FakeTrackRepository implements TrackRepository {
+  readonly rows = new Map<
+    TrackId,
+    { document: TrackDocument; vocabulary: TrackVocabulary; importedAt: Date }
+  >()
+
+  async listTracks(): Promise<TrackSummary[]> {
+    return [...this.rows.values()]
+      .map(({ document, importedAt }) => ({
+        id: document.track.id,
+        title: document.track.title,
+        artist: document.track.artist,
+        homeDialect: document.track.homeDialect,
+        dense: document.track.dense,
+        wordTokens: document.track.wordTokens,
+        uniqueWordTokens: document.track.uniqueWordTokens,
+        importedAt,
+      }))
+      .sort((a, b) => b.importedAt.getTime() - a.importedAt.getTime())
+  }
+
+  async getTrack(id: TrackId): Promise<Track | undefined> {
+    return this.rows.get(id)?.document.track
+  }
+
+  async getStanzas(id: TrackId): Promise<Stanza[]> {
+    return this.rows.get(id)?.document.stanzas ?? []
+  }
+
+  async getTrackVocabulary(id: TrackId): Promise<TrackVocabulary | undefined> {
+    return this.rows.get(id)?.vocabulary
+  }
+
+  async lexiconFor(id: TrackId): Promise<Map<LemmaKey, LexiconEntry>> {
+    const document = this.rows.get(id)?.document
+    return new Map(Object.entries(document?.lexicon ?? {}))
+  }
+
+  async saveTrack(document: TrackDocument, importedAt: Date): Promise<void> {
+    this.rows.set(document.track.id, {
+      document,
+      vocabulary: countTrack(document.track.id, document.stanzas),
+      importedAt,
+    })
+  }
+
+  async deleteTrack(id: TrackId): Promise<void> {
+    // The invariant, restated where a test could break it: no card store is
+    // reachable from here, so this fake cannot unlearn anything either.
+    this.rows.delete(id)
   }
 }

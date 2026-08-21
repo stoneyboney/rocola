@@ -6,39 +6,52 @@
  * to be the discriminator anyway. The file is parsed once and dispatched on its
  * *shape*, which is what makes AirDrop's renaming harmless.
  *
- * Molcajete accepted two shapes here, an object being a bundle and an array
- * being a seed. The bundle is gone with the EPUB pipeline (SPEC §3), so only
- * the array remains — but the dispatch stays, because it is what lets Phase 3
- * add the song document as a second shape without touching the button, the
- * screen, or anything about how a file gets onto the device.
+ * Two shapes: an **array** is a `known.json` seed, an **object** is a built
+ * track. Molcajete's object arm was a bundle; the shape survived the fork
+ * empty and Phase 3 filled it, without touching the button, the screen, or
+ * anything about how a file gets onto the device.
  */
 
-import { parseKnownLemmas } from '../domain/seed/parseKnown'
 import type { KnownLemmaRepository } from '../domain/ports/KnownLemmaRepository'
+import type { TrackRepository } from '../domain/ports/TrackRepository'
+import { parseKnownLemmas } from '../domain/seed/parseKnown'
+import { parseTrack } from '../domain/track/parseTrack'
 
-export type ImportOutcome = {
-  kind: 'known'
-  /** Lemmas in the file, after normalising and deduplicating. */
-  inFile: number
-  /** How many of those the store did not already hold. */
-  added: number
-  total: number
-}
+export type ImportOutcome =
+  | {
+      kind: 'known'
+      /** Lemmas in the file, after normalising and deduplicating. */
+      inFile: number
+      /** How many of those the store did not already hold. */
+      added: number
+      total: number
+    }
+  | {
+      kind: 'track'
+      trackId: string
+      title: string
+      artist: string
+      stanzas: number
+      /** True when a track with this id was already stored and was replaced. */
+      replaced: boolean
+    }
 
 export class UnrecognisedFileError extends Error {
   constructor() {
-    super('not a known.json')
+    super('neither a track nor a known.json')
     this.name = 'UnrecognisedFileError'
   }
 }
 
 export interface ImportTargets {
   known: KnownLemmaRepository
+  tracks: TrackRepository
 }
 
 export async function importFile(
   file: File,
   targets: ImportTargets,
+  now: Date = new Date(),
 ): Promise<ImportOutcome> {
   const text = await file.text()
 
@@ -50,7 +63,33 @@ export async function importFile(
   }
 
   if (Array.isArray(value)) return importKnown(value, targets.known)
+  if (typeof value === 'object' && value !== null) {
+    return importTrack(value, targets.tracks, now)
+  }
   throw new UnrecognisedFileError()
+}
+
+async function importTrack(
+  value: unknown,
+  tracks: TrackRepository,
+  now: Date,
+): Promise<ImportOutcome> {
+  // Validated before a single row is written, so a rejected file leaves the
+  // database exactly as it was.
+  const document = parseTrack(value)
+
+  const existing = await tracks.getTrack(document.track.id)
+  await tracks.saveTrack(document, now)
+  void requestPersistentStorage()
+
+  return {
+    kind: 'track',
+    trackId: document.track.id,
+    title: document.track.title,
+    artist: document.track.artist,
+    stanzas: document.stanzas.length,
+    replaced: existing !== undefined,
+  }
 }
 
 async function importKnown(

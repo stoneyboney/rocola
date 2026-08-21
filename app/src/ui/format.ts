@@ -6,9 +6,17 @@
 
 import { UnrecognisedFileError, type ImportOutcome } from '../app/importFile'
 import { KnownFormatError } from '../domain/seed/parseKnown'
+import {
+  TrackFormatError,
+  UnsupportedSchemaVersionError,
+} from '../domain/track/parseTrack'
 import { COVERAGE_WARNING_THRESHOLD } from '../domain/coverage'
 
 const numbers = new Intl.NumberFormat('de-DE')
+
+export function stanzas(value: number): string {
+  return value === 1 ? '1 Strophe' : `${numbers.format(value)} Strophen`
+}
 
 export function lemmas(value: number): string {
   return `${numbers.format(value)} Lemmata`
@@ -72,6 +80,12 @@ export interface ImportFailure {
 
 /** What an import actually did, once it worked. */
 export function describeImportSuccess(outcome: ImportOutcome): string {
+  if (outcome.kind === 'track') {
+    const what = `„${outcome.title}" von ${outcome.artist}`
+    return outcome.replaced
+      ? `${what} ersetzt · ${stanzas(outcome.stanzas)}`
+      : `${what} importiert · ${stanzas(outcome.stanzas)}`
+  }
   if (outcome.added === 0) {
     // Re-importing the same seed. Worth saying out loud, or it looks broken.
     return `Nichts Neues — diese ${lemmas(outcome.inFile)} sind schon bekannt.`
@@ -86,10 +100,26 @@ export function describeImportSuccess(outcome: ImportOutcome): string {
  * thing worth knowing there.
  */
 export function describeImportFailure(error: unknown): ImportFailure {
+  if (error instanceof UnsupportedSchemaVersionError) {
+    // Not a lesser version of the format — a file with no tokens and no
+    // lexicon, which no reader can render. Saying "rebuild" is the whole
+    // useful content of the message.
+    return {
+      headline: `Dieses Lied hat Schemaversion ${String(error.found)}. Diese App liest Version ${error.supported}.`,
+      detail: 'Mit der aktuellen Pipeline neu bauen: scripts/build_track.py.',
+    }
+  }
+  if (error instanceof TrackFormatError) {
+    return {
+      headline: 'Die Datei ist kein gültiges Lied.',
+      detail: error.message,
+    }
+  }
   if (error instanceof UnrecognisedFileError) {
     return {
       headline: 'Diese Datei kennt die App nicht.',
-      detail: 'Erwartet wird ein known.json aus seed_known.py.',
+      detail:
+        'Erwartet wird ein Lied aus build_track.py oder ein known.json aus seed_known.py.',
     }
   }
   if (error instanceof KnownFormatError) {

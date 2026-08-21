@@ -3,25 +3,33 @@ import { importFile, type ImportOutcome } from '../app/importFile'
 import { useRepositories } from '../app/repositories'
 import { navigate } from '../app/useRoute'
 import { useAsync } from '../app/useAsync'
-import { describeImportFailure, describeImportSuccess, dueCards } from './format'
+import { buildKnownState } from '../domain/knownLemmas'
+import {
+  buildTrackListView,
+  type TrackListInput,
+  type TrackListView,
+} from '../domain/view/trackListView'
+import {
+  cardsToLearn,
+  describeImportFailure,
+  describeImportSuccess,
+  dueCards,
+  percent,
+} from './format'
 import { ImportButton } from './ImportButton'
 import { Screen } from './Screen'
 
 /**
- * The home screen, standing where Molcajete's library stood.
+ * The home screen: the songs you have, and the chip when something is due.
  *
- * It is deliberately almost empty. The song list belongs to Phase 3, when
- * `Track` exists to list; what survives the fork is the pair of things that
- * never depended on there being a book: the seed import, and the chip that
- * appears when cards are due.
- *
- * Keeping the screen rather than deleting it with the library keeps `Review`
- * reachable — it is the only working flow in this build — and keeps the seam
- * where the import lands, so Phase 3 adds a list beneath it instead of
- * rebuilding the plumbing.
+ * Computes nothing (rule 5). The two numbers on each row come from different
+ * denominators — cards over unique lines, coverage over every line — and both
+ * are decided in `trackListView`, which is also where the reason is written
+ * down. A component that derived either of them would be the place the
+ * distinction quietly died.
  */
 export function Home() {
-  const { known, cards, clock } = useRepositories()
+  const { known, cards, tracks, clock } = useRepositories()
   const [reloads, setReloads] = useState(0)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{
@@ -34,13 +42,35 @@ export function Home() {
   // is not a thing worth drawing.
   const due = useAsync(() => cards.countDue(clock.now()), [cards, clock, reloads])
 
+  const list = useAsync<TrackListView>(async () => {
+    const summaries = await tracks.listTracks()
+    const inputs: TrackListInput[] = []
+    for (const summary of summaries) {
+      const vocabulary = await tracks.getTrackVocabulary(summary.id)
+      if (!vocabulary) continue
+      inputs.push({
+        summary,
+        vocabulary,
+        lexicon: await tracks.lexiconFor(summary.id),
+      })
+    }
+
+    // Live state, not what the file thought when it was written.
+    const [carded, marked] = await Promise.all([
+      cards.listCardedLemmas(),
+      known.listAll(),
+    ])
+    const full = await cards.getMany([...carded])
+    return buildTrackListView(inputs, buildKnownState(full.values(), marked))
+  }, [tracks, cards, known, reloads])
+
   const onFile = useCallback(
     async (file: File) => {
       setBusy(true)
       setFailure(null)
       setDone(null)
       try {
-        const outcome: ImportOutcome = await importFile(file, { known })
+        const outcome: ImportOutcome = await importFile(file, { known, tracks })
         setDone(describeImportSuccess(outcome))
         setReloads((n) => n + 1)
       } catch (error) {
@@ -49,7 +79,7 @@ export function Home() {
         setBusy(false)
       }
     },
-    [known],
+    [known, tracks],
   )
 
   return (
@@ -85,19 +115,51 @@ export function Home() {
         </div>
       )}
 
-      <div className="text-ink-muted mt-16 text-center text-sm leading-relaxed text-balance">
-        <p className="text-ink font-serif text-lg">Noch keine Lieder da.</p>
-        <p className="mt-2">
-          Die Songauswahl kommt aus deinen last.fm-Scrobbles und wird auf dem
-          Rechner vorbereitet. Diese Version kann das noch nicht.
-        </p>
-        <p className="mt-4">
-          Was jetzt schon geht: eine <span className="font-mono">known.json</span>{' '}
-          aus <span className="font-mono">seed_known.py</span> laden — dein
-          Anki-Wortschatz, damit dir nichts beigebracht wird, was du längst
-          kannst — und fällige Karten wiederholen.
-        </p>
-      </div>
+      {list.status === 'ready' && list.value.isEmpty && (
+        <div className="text-ink-muted mt-16 text-center text-sm leading-relaxed text-balance">
+          <p className="text-ink font-serif text-lg">Noch keine Lieder da.</p>
+          <p className="mt-2">
+            Lieder entstehen auf dem Rechner mit{' '}
+            <span className="font-mono">build_track.py</span> und kommen per
+            AirDrop hierher. Importieren, dann offline lesen.
+          </p>
+          <p className="mt-4">
+            Derselbe Knopf nimmt auch eine{' '}
+            <span className="font-mono">known.json</span> aus{' '}
+            <span className="font-mono">seed_known.py</span> — dein
+            Anki-Wortschatz, damit dir nichts beigebracht wird, was du längst
+            kannst.
+          </p>
+        </div>
+      )}
+
+      {list.status === 'ready' && !list.value.isEmpty && (
+        <ul className="divide-rule divide-y">
+          {list.value.rows.map((row) => (
+            <li key={row.id}>
+              <button
+                type="button"
+                className="w-full py-4 text-left"
+                onClick={() => navigate({ name: 'reader', trackId: row.id })}
+              >
+                <span className="font-serif block text-xl" lang="es">
+                  {row.title}
+                </span>
+                <span className="text-ink-muted block text-sm">{row.artist}</span>
+                <span className="text-ink-faint mt-1 block text-xs">
+                  {[
+                    cardsToLearn(row.cardsToLearn),
+                    `${percent(row.coverage)} Abdeckung`,
+                    row.dense ? 'dicht' : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </Screen>
   )
 }

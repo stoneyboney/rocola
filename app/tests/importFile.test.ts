@@ -6,9 +6,9 @@
  * so the extension was never available as a discriminator, and AirDrop renaming
  * a file has to stay harmless.
  *
- * One shape is accepted, where Molcajete took two. The bundle is gone with the
- * EPUB pipeline (SPEC §3) and the object arm now falls through to a refusal;
- * Phase 3 fills it with the song document.
+ * Two shapes: an array is a `known.json`, an object is a built track. The
+ * object arm was empty from the fork until Phase 3 filled it, and nothing about
+ * the button or the screen changed when it did.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -18,10 +18,14 @@ import {
   type ImportTargets,
 } from '../src/app/importFile'
 import { KnownFormatError } from '../src/domain/seed/parseKnown'
-import { FakeKnownLemmaRepository } from './fakes'
+import { UnsupportedSchemaVersionError } from '../src/domain/track/parseTrack'
+import { FakeKnownLemmaRepository, FakeTrackRepository } from './fakes'
 
-function targets(): ImportTargets & { known: FakeKnownLemmaRepository } {
-  return { known: new FakeKnownLemmaRepository() }
+function targets(): ImportTargets & {
+  known: FakeKnownLemmaRepository
+  tracks: FakeTrackRepository
+} {
+  return { known: new FakeKnownLemmaRepository(), tracks: new FakeTrackRepository() }
 }
 
 /** A `File` without a DOM: only `.text()` is ever called. */
@@ -87,13 +91,107 @@ describe('importing a known.json', () => {
 
 describe('anything else', () => {
   it('is refused by shape rather than guessed at', async () => {
-    // `{}` is in this list where Molcajete would have tried to parse it as a
-    // bundle. The object arm is free again, which is what Phase 3 uses for the
-    // song document — the button and this dispatch do not change.
-    for (const contents of ['not json at all', '"a string"', '42', 'null', '{}']) {
+    // `{}` reaches the object arm now and is rejected there, by parseTrack,
+    // rather than by the dispatch — which is the right place for it.
+    for (const contents of ['not json at all', '"a string"', '42', 'null']) {
       await expect(importFile(file(contents), targets())).rejects.toThrow(
         UnrecognisedFileError,
       )
     }
+  })
+})
+
+describe('importing a track', () => {
+  const song = {
+    schemaVersion: 2,
+    id: 'ejemplo-camino',
+    title: 'Camino',
+    artist: 'Ejemplo',
+    homeDialect: 'es-MX',
+    source: 'lrclib',
+    fetchedAt: '2026-08-21T00:00:00Z',
+    stanzas: [
+      {
+        index: 0,
+        lines: [
+          {
+            index: 0,
+            text: 'Camino solo',
+            tokens: [{ s: 'Camino', l: 'camino', p: 'NOUN', t: 'k1' }],
+          },
+        ],
+      },
+    ],
+    lexicon: {
+      k1: {
+        lemma: 'camino',
+        pos: 'NOUN',
+        zipf: 4.3,
+        uniqueLineCount: 1,
+        variety: 'general',
+        register: 'neutral',
+      },
+    },
+    teach: ['k1'],
+    glossOnly: [],
+    counts: { wordTokens: 1, uniqueWordTokens: 1 },
+    dense: false,
+  }
+
+  it('stores the song and reports what it did', async () => {
+    const t = targets()
+    const outcome = await importFile(file(JSON.stringify(song)), t)
+
+    expect(outcome.kind).toBe('track')
+    if (outcome.kind !== 'track') return
+    expect(outcome.trackId).toBe('ejemplo-camino')
+    expect(outcome.stanzas).toBe(1)
+    expect(outcome.replaced).toBe(false)
+    expect(await t.tracks.getTrack('ejemplo-camino')).toBeDefined()
+  })
+
+  it('reports a re-import as a replacement', async () => {
+    // The id is a slug, so rebuilding after a re-gloss is the same song.
+    const t = targets()
+    await importFile(file(JSON.stringify(song)), t)
+    const again = await importFile(file(JSON.stringify(song)), t)
+
+    expect(again.kind === 'track' && again.replaced).toBe(true)
+    expect(await t.tracks.listTracks()).toHaveLength(1)
+  })
+
+  it('counts the vocabulary both ways at import', async () => {
+    const t = targets()
+    await importFile(file(JSON.stringify(song)), t)
+    const vocabulary = await t.tracks.getTrackVocabulary('ejemplo-camino')
+
+    expect(vocabulary).toBeDefined()
+    expect(vocabulary!.all).toBeDefined()
+    expect(vocabulary!.unique).toBeDefined()
+  })
+
+  it('writes nothing when the song is rejected', async () => {
+    const t = targets()
+    const broken = { ...song, lexicon: {} }
+    await expect(importFile(file(JSON.stringify(broken)), t)).rejects.toThrow()
+
+    expect(await t.tracks.listTracks()).toEqual([])
+  })
+
+  it('refuses a version-1 file by version', async () => {
+    const t = targets()
+    await expect(
+      importFile(file(JSON.stringify({ ...song, schemaVersion: 1 })), t),
+    ).rejects.toThrow(UnsupportedSchemaVersionError)
+    expect(await t.tracks.listTracks()).toEqual([])
+  })
+
+  it('does not care what the file is called', async () => {
+    const t = targets()
+    const outcome = await importFile(
+      file(JSON.stringify(song), 'Unbenannt-7.json'),
+      t,
+    )
+    expect(outcome.kind).toBe('track')
   })
 })

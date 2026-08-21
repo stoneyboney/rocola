@@ -1,10 +1,14 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import type { CardRepository } from '../domain/ports/CardRepository'
+import type { ReadingPositionRepository } from '../domain/ports/ReadingPositionRepository'
+import type { TrackRepository } from '../domain/ports/TrackRepository'
 import type { Clock } from '../domain/ports/Clock'
 import type { KnownLemmaRepository } from '../domain/ports/KnownLemmaRepository'
 import type { SessionRepository } from '../domain/ports/SessionRepository'
 
 export interface Repositories {
+  tracks: TrackRepository
+  positions: ReadingPositionRepository
   cards: CardRepository
   known: KnownLemmaRepository
   sessions: SessionRepository
