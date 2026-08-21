@@ -14,6 +14,11 @@
  *
  * ## What is stored
  *
+ *   tracks        one row per song — everything the song list draws
+ *   stanzas       one row per stanza, read for one track at a time
+ *   lexicon       one row per entry, the reader's bulk read
+ *   trackVocab    both vocabulary counts, computed once at import
+ *   positions     where you were in a song
  *   sessions      one row per teaching session in progress, keyed by track
  *   cards         FSRS state, one row per lemma
  *   knownLemmas   "Ich kenne das", one row per lemma
@@ -22,24 +27,72 @@
  * learned in one song must never be taught again in another. That absence is
  * the enforcement rather than a convention — see `CardRepository`.
  *
- * ## Why there is one version and not three
+ * ## Why version 2 is a second block and not an edit to version 1
  *
- * Molcajete's schema reached `version(3)` by adding stores across three phases,
- * and its upgrade path has to stay because there are devices holding data
- * written under version 1. There is no such device here. A database named
- * `rocola` has never existed, so it has no history to migrate, and carrying the
- * inherited version chain would be three claims about upgrades that never
- * happened. The first schema Rocola ships is version 1.
+ * There is still no device holding version-1 data, so an edit would produce the
+ * same result today. It is a second block anyway: a schema's version chain is a
+ * record of what shipped, and rewriting it to look like the current shape was
+ * always the shape is a small lie that costs nothing to avoid. There is no
+ * upgrade function because every new store starts empty.
  *
- * The `books`, `chapters`, `lexicon`, `positions` and `chapterVocab` stores are
- * gone with the EPUB pipeline (SPEC §3). The song equivalents arrive in Phase 3
- * with `Track` and `LyricDocument`, as version 2.
+ * ## Where the counts are a plain object and not a Map
+ *
+ * `TrackVocabularyRow` stores `counts` as `Record<LemmaKey, number>` where the
+ * domain layer uses a `Map`. Molcajete's note, kept: a plain object
+ * structured-clones without surprises on older Safari. `DexieTrackRepository`
+ * converts at the boundary so nothing above it sees the difference.
  */
 
 import Dexie, { type Table } from 'dexie'
 import type { LemmaId } from '../domain/lemma'
 import type { TeachingSession } from '../domain/session/session'
 import type { SrsCard } from '../domain/srs/scheduler'
+import type { Line, Track } from '../domain/track'
+import type { LemmaKey, LexiconEntry, TrackId } from '../domain/types'
+
+export interface TrackRow extends Track {
+  importedAt: Date
+}
+
+export interface StanzaRow {
+  trackId: TrackId
+  index: number
+  repeatOf?: number
+  lines: Line[]
+}
+
+export interface LexiconRow {
+  trackId: TrackId
+  key: LemmaKey
+  entry: LexiconEntry
+}
+
+/** As stored: a plain object, per the header. */
+export interface StoredVocabulary {
+  counts: Record<LemmaKey, number>
+  propnTokens: number
+  tokenCount: number
+}
+
+/**
+ * **Both** counts, and that is the point of the row.
+ *
+ * `all` is coverage's denominator and `unique` is the teach set's. A row
+ * holding one of them would make `TrackVocabulary` a comment and let a screen
+ * pick a denominator without anybody choosing.
+ */
+export interface TrackVocabularyRow {
+  trackId: TrackId
+  all: StoredVocabulary
+  unique: StoredVocabulary
+}
+
+export interface PositionRow {
+  trackId: TrackId
+  /** A line index, not pixels: it survives a type-size change. */
+  lineIndex: number
+  updatedAt: Date
+}
 
 export interface SessionRow {
   trackId: string
@@ -59,6 +112,11 @@ export interface KnownLemmaRow {
 }
 
 export class RocolaDatabase extends Dexie {
+  tracks!: Table<TrackRow, string>
+  stanzas!: Table<StanzaRow, [string, number]>
+  lexicon!: Table<LexiconRow, [string, string]>
+  trackVocab!: Table<TrackVocabularyRow, string>
+  positions!: Table<PositionRow, string>
   sessions!: Table<SessionRow, string>
   cards!: Table<CardRow, string>
   knownLemmas!: Table<KnownLemmaRow, string>
@@ -74,6 +132,18 @@ export class RocolaDatabase extends Dexie {
       sessions: 'trackId',
       cards: 'lemmaId, card.fsrs.due',
       knownLemmas: 'lemmaId',
+    })
+
+    // Phase 3. Songs. No upgrade function: every store here starts empty, and
+    // the compound keys put the track id in every one of them so that removing
+    // a song is a handful of range deletes — and so that there is no way to
+    // read one song's stanzas beside another song's lexicon.
+    this.version(2).stores({
+      tracks: 'id',
+      stanzas: '[trackId+index], trackId',
+      lexicon: '[trackId+key], trackId',
+      trackVocab: 'trackId',
+      positions: 'trackId',
     })
   }
 }
