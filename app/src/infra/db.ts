@@ -27,13 +27,31 @@
  * learned in one song must never be taught again in another. That absence is
  * the enforcement rather than a convention — see `CardRepository`.
  *
- * ## Why version 2 is a second block and not an edit to version 1
+ * ## Three versions, and why the middle one only deletes
  *
- * There is still no device holding version-1 data, so an edit would produce the
- * same result today. It is a second block anyway: a schema's version chain is a
- * record of what shipped, and rewriting it to look like the current shape was
- * always the shape is a small lie that costs nothing to avoid. There is no
- * upgrade function because every new store starts empty.
+ * A version chain is a record of what shipped, and rewriting it is not a
+ * tidy-up — it is a claim about a database that exists on a device somewhere.
+ *
+ * That was learned the hard way. Version 1 shipped with
+ * `sessions: '[bookId+chapterIndex], bookId'`. When the session lost its second
+ * axis (§11.1: one song is one session) the declaration was edited in place to
+ * `sessions: 'trackId'` — same version number, different primary key — and any
+ * browser holding the old database answered:
+ *
+ *     UpgradeError: Not yet support for changing primary key
+ *
+ * IndexedDB cannot re-key a store. The only way is to delete it and make a new
+ * one, and that has to happen in its own version because a store cannot be both
+ * dropped and declared in one `stores()` call. So:
+ *
+ *   v1  what actually shipped, restored, compound session key and all
+ *   v2  drops `sessions`. Nothing is lost: a session keyed by book and chapter
+ *       describes a world with chapters in it, and no session has ever been
+ *       written — `TeachingSession` still has no caller.
+ *   v3  the songs, and `sessions` again with the key it should have had.
+ *
+ * There is no upgrade function anywhere: every store either starts empty or is
+ * being thrown away.
  *
  * ## Where the counts are a plain object and not a Map
  *
@@ -128,17 +146,27 @@ export class RocolaDatabase extends Dexie {
     // object, which is where `due` lives and where it has to stay — CLAUDE.md
     // requires the whole card object be stored, never a copy of one field
     // beside it, because partial state cannot be rescheduled.
+    // As shipped. Do not edit this block — see the header. The compound
+    // session key is wrong for a song and is corrected in v2/v3, not here.
     this.version(1).stores({
-      sessions: 'trackId',
+      sessions: '[bookId+chapterIndex], bookId',
       cards: 'lemmaId, card.fsrs.due',
       knownLemmas: 'lemmaId',
     })
 
-    // Phase 3. Songs. No upgrade function: every store here starts empty, and
-    // the compound keys put the track id in every one of them so that removing
-    // a song is a handful of range deletes — and so that there is no way to
-    // read one song's stanzas beside another song's lexicon.
+    // Drops the book-shaped session store. A store cannot be dropped and
+    // redeclared in one version, which is the only reason this is its own.
     this.version(2).stores({
+      sessions: null,
+    })
+
+    // Phase 3. Songs, and `sessions` with the key it should have had. No
+    // upgrade function: every store here starts empty. The compound keys put
+    // the track id in every one of them, so removing a song is a handful of
+    // range deletes and there is no way to read one song's stanzas beside
+    // another song's lexicon.
+    this.version(3).stores({
+      sessions: 'trackId',
       tracks: 'id',
       stanzas: '[trackId+index], trackId',
       lexicon: '[trackId+key], trackId',
